@@ -1,0 +1,12 @@
+django>=5.1,<6
+whitenoise
+python-dotenv
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+openai
+twilio
+apscheduler
+httpx
+beautifulsoup4
+pypdf

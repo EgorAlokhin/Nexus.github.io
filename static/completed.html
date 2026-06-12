@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Completed</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / COMPLETED</div>
+    <div class="topbar-right">
+      <button onclick="syncAll(this)">Sync All</button>
+    </div>
+  </div>
+
+  <p class="muted login-lead">
+    Assignments marked done in Google Classroom (turned in) or checked off on the dashboard.
+    Run <strong>Sync All</strong> to refresh Classroom completion status.
+  </p>
+
+  <div class="filters">
+    <select id="f-source">
+      <option value="">All sources</option>
+      <option value="gmail">Gmail</option>
+      <option value="classroom">Classroom</option>
+      <option value="buzz">Buzz</option>
+      <option value="veracross">Veracross</option>
+    </select>
+  </div>
+
+  <table id="task-table">
+    <thead><tr><th>Title</th><th>Course</th><th>Source</th><th>Due</th><th>Priority</th><th>Open</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+<script src="/static/app.js?v=2"></script>
+<script>initCompleted();</script>
+</body>
+</html>

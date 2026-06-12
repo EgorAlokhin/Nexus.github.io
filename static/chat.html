@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Chat</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / CHAT</div>
+    <span class="muted" id="model-badge"></span>
+  </div>
+
+  <div class="chat-layout">
+    <div class="chat-main">
+      <div class="messages" id="messages">
+        <div class="msg assistant">Nexus ready. Attach a file or ask about deadlines, workload, or math. Model: Haiku (quick) → Sonnet (deep) → Opus (hardest).</div>
+      </div>
+      <div class="chat-attach-row">
+        <label class="chat-file-label">
+          <input type="file" id="chat-file" accept=".txt,.md,.pdf,.png,.jpg,.jpeg,.webp,.csv,.py,.java,.json">
+          Attach file
+        </label>
+        <span class="muted" id="file-name"></span>
+      </div>
+      <div class="chat-input">
+        <input type="text" id="chat-text" placeholder="Message Nexus..." autocomplete="off">
+        <button id="send-btn">Send</button>
+      </div>
+    </div>
+    <div class="chat-side">
+      <div class="section-h">QUICK PROMPTS</div>
+      <div class="quick">
+        <button>What's due this week?</button>
+        <button>Am I overloaded?</button>
+        <button>Make me a study plan</button>
+        <button>Explain my hardest task</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js?v=3"></script>
+<script>initChat();</script>
+</body>
+</html>

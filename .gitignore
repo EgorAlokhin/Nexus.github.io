@@ -1,0 +1,8 @@
+credentials.env
+nexus.db
+.venv/
+.venv-django/
+__pycache__/
+*.pyc
+staticfiles/
+.idea/

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Settings</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / SETTINGS</div>
+  </div>
+
+  <div id="oauth-banner" class="oauth-banner" style="display:none"></div>
+
+  <div class="account-hero">
+    <div class="section-h">QUICK SETUP</div>
+    <p class="muted">1. Connect Google below. 2. Add Veracross credentials on <a href="/login">Your account</a>. Then Sync All.</p>
+  </div>
+
+  <div class="section-h">CONNECTIONS</div>
+
+  <div class="settings-row">
+    <div class="row-head">
+      <div>
+        <div class="status-name">Google (Gmail + Classroom)</div>
+        <div class="muted" id="google-status">—</div>
+      </div>
+      <a class="btn" href="/auth/google">Connect Google</a>
+    </div>
+  </div>
+
+  <div class="settings-row">
+    <div class="row-head">
+      <div>
+        <div class="status-name src-gmail">Gmail</div>
+        <div class="muted" id="st-gmail">—</div>
+      </div>
+      <button onclick="syncOne('gmail', this)">Sync</button>
+    </div>
+  </div>
+
+  <div class="settings-row">
+    <div class="row-head">
+      <div>
+        <div class="status-name src-classroom">Classroom</div>
+        <div class="muted" id="st-classroom">—</div>
+      </div>
+      <button onclick="syncOne('classroom', this)">Sync</button>
+    </div>
+  </div>
+
+  <div class="settings-row">
+    <div class="row-head">
+      <div>
+        <div class="status-name src-buzz">Buzz / Accelerate</div>
+        <div class="muted" id="st-buzz">—</div>
+      </div>
+      <button onclick="syncOne('buzz', this)">Sync</button>
+    </div>
+  </div>
+
+  <div class="settings-row">
+    <div class="row-head">
+      <div>
+        <div class="status-name src-veracross">Veracross</div>
+        <div class="muted" id="st-veracross">—</div>
+      </div>
+      <button onclick="syncOne('veracross', this)">Sync</button>
+    </div>
+  </div>
+
+  <div class="section-h">NOTIFICATIONS</div>
+  <div class="settings-row">
+    <div class="row-head">
+      <div class="muted">
+        SMS/WhatsApp timing and reminders are on the
+        <a href="/notifications">Notifications</a> page.
+      </div>
+      <a class="btn" href="/notifications">Notification settings</a>
+    </div>
+  </div>
+
+  <div class="section-h">APPEARANCE</div>
+  <div class="settings-row">
+    <div class="row-head">
+      <div class="muted">Theme toggle is in the sidebar. Preference is saved locally.</div>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+<script>initSettings();</script>
+</body>
+</html>

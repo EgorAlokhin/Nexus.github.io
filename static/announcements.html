@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Announcements</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / ANNOUNCEMENTS</div>
+    <div class="topbar-right">
+      <button onclick="syncAll(this)">Sync All</button>
+    </div>
+  </div>
+
+  <p class="muted login-lead">
+    Classroom posts, BHS News from Veracross email, and Buzz activity stream updates.
+    Assignments stay on the <a href="/">Dashboard</a> and <a href="/calendar">Calendar</a>.
+  </p>
+
+  <div class="ann-tabs">
+    <button type="button" class="ann-tab active" data-ann-tab="announcements">Announcements</button>
+    <button type="button" class="ann-tab" data-ann-tab="news">News</button>
+    <button type="button" class="ann-tab" data-ann-tab="activity">Activity</button>
+  </div>
+
+  <div id="announcements-root"></div>
+</div>
+<script src="/static/app.js?v=8"></script>
+<script>initAnnouncements();</script>
+</body>
+</html>

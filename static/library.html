@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Library</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / LIBRARY</div>
+  </div>
+
+  <p class="login-lead">Suggested reading based on your open work per class. Full catalog below (placeholder data until the library database is connected).</p>
+
+  <div class="section-h">SUGGESTED FOR YOU</div>
+  <div id="library-suggested" class="library-grid"></div>
+
+  <div class="section-h">ALL BOOKS</div>
+  <div id="library-all" class="library-grid"></div>
+</div>
+<script src="/static/app.js"></script>
+<script>initLibrary();</script>
+</body>
+</html>

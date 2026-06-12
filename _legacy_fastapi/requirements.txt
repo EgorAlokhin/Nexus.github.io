@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+anthropic
+twilio
+apscheduler
+httpx
+python-dotenv
+jinja2
+passlib
+beautifulsoup4
+python-multipart
+pypdf
