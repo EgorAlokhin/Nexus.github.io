@@ -83,7 +83,18 @@ def needs_web_search(message: str, *, has_attachment: bool = False) -> bool:
     return False
 
 
-def pick_model(message: str, *, has_attachment: bool = False, force_math: bool = False) -> str:
+TIER_QUICK = "quick"
+TIER_DEEP = "deep"
+TIER_ADVANCED = "advanced"
+
+TIER_LABELS = {
+    TIER_QUICK: "GPT-OSS (quick)",
+    TIER_DEEP: "GPT-OSS (deep)",
+    TIER_ADVANCED: "GLM-4.7 (advanced)",
+}
+
+
+def pick_model(message: str, *, has_attachment: bool = False, force_math: bool = False) -> tuple[str, str]:
     msg = (message or "").lower().strip()
     words = len(msg.split())
     advanced = model_advanced()
@@ -91,25 +102,29 @@ def pick_model(message: str, *, has_attachment: bool = False, force_math: bool =
     fast = model_fast()
 
     if any(t in msg for t in OPUS_TRIGGERS):
-        return advanced
+        return advanced, TIER_ADVANCED
     if force_math and any(t in msg for t in ("proof", "theorem", "conjecture", "topology", "manifold")):
-        return advanced
+        return advanced, TIER_ADVANCED
     if has_attachment and words > 15:
-        return standard
+        return standard, TIER_DEEP
     if any(t in msg for t in SONNET_TRIGGERS) or force_math:
-        return standard
+        return standard, TIER_DEEP
     if words > 120 or (words > 40 and "?" in msg):
-        return standard
+        return standard, TIER_DEEP
     if words <= 18 and not has_attachment:
-        return fast
-    return standard
+        return fast, TIER_QUICK
+    return standard, TIER_DEEP
 
 
-def tier_label(model: str) -> str:
-    if model == MODEL_ADVANCED or model == DEFAULT_ADVANCED:
-        return "advanced"
-    if model == MODEL_STANDARD or model == DEFAULT_STANDARD:
-        return "standard"
-    if model == MODEL_FAST or model == DEFAULT_FAST:
-        return "fast"
-    return model.split("-")[0] if model else "unknown"
+def tier_label(model: str, tier_key: str | None = None) -> str:
+    if tier_key:
+        return TIER_LABELS.get(tier_key, tier_key)
+    m = (model or "").lower()
+    adv = model_advanced().lower()
+    if m == adv or "glm" in m or "opus" in m:
+        return TIER_LABELS[TIER_ADVANCED]
+    if "haiku" in m or "sonnet" in m:
+        return TIER_LABELS[TIER_DEEP] if "sonnet" in m else TIER_LABELS[TIER_QUICK]
+    if "gpt-oss" in m:
+        return TIER_LABELS[TIER_DEEP]
+    return model or "unknown"

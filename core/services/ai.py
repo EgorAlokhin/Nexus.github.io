@@ -17,6 +17,7 @@ from core.services.model_select import (
     needs_web_search,
     pick_model,
     tier_label,
+    TIER_ADVANCED,
 )
 
 EXAM_WORDS = ("exam", "final", "test", "quiz", "midterm", "project", "presentation")
@@ -231,7 +232,7 @@ def chat_reply(message, tasks, history, attachment_kind=None, attachment_data=No
     user_content = _build_user_content(message, attachment_kind, attachment_data, attachment_media)
     msgs.append({"role": "user", "content": user_content})
 
-    model = pick_model(message, has_attachment=bool(attachment_kind), force_math=_is_math(message))
+    model, tier_key = pick_model(message, has_attachment=bool(attachment_kind), force_math=_is_math(message))
     if needs_web_search(message, has_attachment=bool(attachment_kind)):
         sys += "\n\nThe user may need current information. State clearly when you cannot verify recent facts."
     try:
@@ -239,11 +240,11 @@ def chat_reply(message, tasks, history, attachment_kind=None, attachment_data=No
             model,
             sys,
             msgs,
-            max_tokens=4096 if model == model_advanced() else 2048,
+            max_tokens=4096 if tier_key == TIER_ADVANCED else 2048,
         )
-        return reply, model
+        return reply, model, tier_key
     except Exception as e:
-        return f"Error contacting Nexus AI: {e}", model
+        return f"Error contacting Nexus AI: {e}", model, tier_key
 
 
 def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_media=None):
@@ -253,17 +254,17 @@ def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_
         + _accuracy_rules()
     )
     user_content = _build_user_content(question, attachment_kind, attachment_data, attachment_media)
-    model = pick_model(question, has_attachment=bool(attachment_kind), force_math=True)
+    model, tier_key = pick_model(question, has_attachment=bool(attachment_kind), force_math=True)
     try:
         reply = _create_message(
             model,
             sys,
             [{"role": "user", "content": user_content}],
-            max_tokens=4096 if model == model_advanced() else 2048,
+            max_tokens=4096 if tier_key == TIER_ADVANCED else 2048,
         )
-        return reply, model
+        return reply, model, tier_key
     except Exception as e:
-        return f"Error contacting math tutor: {e}", model
+        return f"Error contacting math tutor: {e}", model, tier_key
 
 
 def handle_chat(message, history, file=None):
@@ -284,11 +285,11 @@ def handle_chat(message, history, file=None):
 
     tasks = list(Task.objects.for_worklist().filter(is_completed=False))
     if _is_math(message) or (attachment_kind and "math" in (message or "").lower()):
-        reply, model = math_tutor(message, attachment_kind, attachment_data, attachment_media)
+        reply, model, tier_key = math_tutor(message, attachment_kind, attachment_data, attachment_media)
     else:
-        reply, model = chat_reply(message, tasks, hist, attachment_kind, attachment_data, attachment_media)
+        reply, model, tier_key = chat_reply(message, tasks, hist, attachment_kind, attachment_data, attachment_media)
 
     user_line = message or f"[attachment: {file.name if file else 'file'}]"
     ChatMessage.objects.create(role="user", content=user_line)
     ChatMessage.objects.create(role="assistant", content=reply)
-    return {"response": reply, "model": model, "tier": tier_label(model)}
+    return {"response": reply, "model": model, "tier": tier_label(model, tier_key)}

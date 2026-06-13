@@ -136,11 +136,7 @@ def sync_gmail():
 
     for t in Task.objects.filter(source="gmail"):
         if t.external_id and t.external_id not in seen_ids:
-            lines = (t.description or "").split("\n", 1)
-            sender = lines[0] if lines else ""
-            snippet = lines[1] if len(lines) > 1 else ""
-            if not is_relevant_gmail(t.title, sender, snippet):
-                t.delete()
+            t.delete()
 
     _purge_junk_gmail()
     return count

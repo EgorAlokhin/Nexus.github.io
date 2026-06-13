@@ -8,7 +8,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
-from core.models import UserSession
+from core.models import Task, UserSession
 from core.services.config import admin_email, cfg
 
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
@@ -20,6 +20,7 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
+    "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
     "https://www.googleapis.com/auth/classroom.announcements.readonly",
 ]
 
@@ -110,11 +111,15 @@ def auth_google_callback(code: str = ""):
     except Exception as exc:
         return redirect(f"/settings?oauth_error={quote(str(exc)[:200])}")
     s = get_or_create_session()
+    old_email = (s.google_email or "").strip().lower()
     if creds.refresh_token:
         s.google_refresh_token = creds.refresh_token
     email = _fetch_google_email(creds.token)
     if email:
-        s.google_email = email
+        new_email = email.strip().lower()
+        if old_email and old_email != new_email:
+            Task.objects.filter(source__in=["gmail", "classroom", "news"]).delete()
+        s.google_email = new_email
     s.save()
     return redirect("/settings?oauth=ok")
 

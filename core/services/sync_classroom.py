@@ -2,6 +2,7 @@ from datetime import datetime
 
 from googleapiclient.discovery import build
 
+from core.models import Task
 from core.services.auth_google import get_google_credentials
 from core.services.config import upsert_task
 
@@ -90,6 +91,7 @@ def sync_classroom():
     service = build("classroom", "v1", credentials=creds, cache_discovery=False)
     courses = service.courses().list(courseStates=["ACTIVE"]).execute().get("courses", [])
     count = 0
+    seen_ids = set()
     for c in courses:
         cid, cname = c["id"], c.get("name", "")
         submissions = _list_my_submissions(service, cid)
@@ -99,10 +101,12 @@ def sync_classroom():
             work = []
         for w in work:
             wid = w["id"]
+            ext_id = f"{cid}:{wid}"
+            seen_ids.add(ext_id)
             handed_in = _handed_in(service, cid, wid, submissions)
             upsert_task(
                 source="classroom",
-                external_id=f"{cid}:{wid}",
+                external_id=ext_id,
                 title=w.get("title", "(untitled)"),
                 description=w.get("description", ""),
                 due_date=_due(w),
@@ -116,9 +120,11 @@ def sync_classroom():
             anns = []
         for a in anns:
             txt = a.get("text", "")
+            ann_id = f"{cid}:ann:{a['id']}"
+            seen_ids.add(ann_id)
             upsert_task(
                 source="classroom",
-                external_id=f"{cid}:ann:{a['id']}",
+                external_id=ann_id,
                 title=("Announcement: " + txt[:60]) if txt else "Announcement",
                 description=txt,
                 due_date=None,
@@ -126,4 +132,8 @@ def sync_classroom():
                 is_completed=False,
             )
             count += 1
+
+    for t in Task.objects.filter(source="classroom"):
+        if t.external_id and t.external_id not in seen_ids:
+            t.delete()
     return count
