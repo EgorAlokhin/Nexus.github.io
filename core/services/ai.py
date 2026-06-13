@@ -10,6 +10,7 @@ from openai import OpenAI
 
 from core.models import ChatMessage, Task
 from core.services.config import cfg
+from core.services.dates import normalize_due, utc_now
 from core.services.model_select import (
     model_advanced,
     model_fallback,
@@ -133,13 +134,11 @@ def _fmt_tasks(tasks):
 
 def prioritize_tasks(tasks):
     out = []
-    now = timezone.now()
+    now = utc_now()
     for t in tasks:
         score = 5
-        if t.due_date:
-            due = t.due_date
-            if timezone.is_naive(due):
-                due = timezone.make_aware(due, timezone.utc)
+        due = normalize_due(t.due_date)
+        if due:
             days = (due - now).total_seconds() / 86400
             if days < 1:
                 score += 4
@@ -162,7 +161,10 @@ def prioritize_tasks(tasks):
 
 def apply_priorities():
     tasks = Task.objects.for_worklist().filter(is_completed=False)
-    scores = dict(prioritize_tasks(list(tasks)))
+    try:
+        scores = dict(prioritize_tasks(list(tasks)))
+    except Exception:
+        return
     for t in tasks:
         if t.id in scores:
             t.priority_score = scores[t.id]

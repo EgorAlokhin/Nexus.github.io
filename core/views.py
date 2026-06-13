@@ -12,6 +12,7 @@ from core.services.auth_google import (
     auth_google_callback,
     auth_google_redirect,
     get_account_info,
+    google_scope_status,
     is_admin,
     session_user,
 )
@@ -233,6 +234,7 @@ def complete_task(request, task_id):
 def api_status(request):
     s = UserSession.objects.first()
     google = bool(s and s.google_refresh_token)
+    scope = google_scope_status()
 
     def cnt(src, done=None):
         q = Task.objects.for_worklist().filter(source=src)
@@ -257,6 +259,9 @@ def api_status(request):
             "last_sync": LAST_SYNC.get(src),
         }
         for src in SOURCES
+    } | {
+        "google_missing_scopes": scope.get("missing_scopes") or [],
+        "google_needs_reconnect": bool(scope.get("missing_scopes")),
     })
 
 
@@ -292,6 +297,7 @@ def ai_digest(request):
     return _json({"digest": generate_digest(tasks)})
 
 
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def settings_api(request):
     if request.method == "GET":
@@ -299,6 +305,7 @@ def settings_api(request):
     return save_settings(request)
 
 
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def admin_credentials_api(request):
     if request.method == "GET":
@@ -306,6 +313,7 @@ def admin_credentials_api(request):
     return save_admin_credentials(request)
 
 
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def notification_prefs_api(request):
     if request.method == "GET":

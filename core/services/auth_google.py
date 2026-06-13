@@ -83,13 +83,24 @@ def _fetch_google_email(access_token: str) -> str | None:
         return None
 
 
+def google_scope_status():
+    creds = get_google_credentials()
+    if not creds:
+        return {"connected": False, "missing_scopes": SCOPES[:]}
+    granted = set(creds.scopes or [])
+    missing = [s for s in SCOPES if s not in granted]
+    return {"connected": True, "missing_scopes": missing}
+
+
 def get_account_info():
     s = session_user()
     email = session_email()
+    scope = google_scope_status()
     return {
         "email": email,
         "is_admin": is_admin(),
         "google_connected": bool(s and s.google_refresh_token),
+        "google_missing_scopes": scope.get("missing_scopes") or [],
     }
 
 

@@ -660,6 +660,12 @@ async function initSettings() {
     }
   }
   const s = await getJSON("/api/status");
+  if (banner && s.google_needs_reconnect) {
+    banner.style.display = "block";
+    banner.className = "oauth-banner err";
+    banner.textContent =
+      "Missing Google Classroom permissions. Disconnect Google, then Connect again and accept ALL permission checkboxes.";
+  }
   const g = s.gmail && s.gmail.connected;
   const gs = document.getElementById("google-status");
   if (gs) gs.innerHTML = g ? '<span class="dot on">●</span> Connected'

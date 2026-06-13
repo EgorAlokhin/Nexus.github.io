@@ -1,11 +1,11 @@
-import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from apscheduler.schedulers.background import BackgroundScheduler
+from django.utils import timezone
 
 from core.models import Notification, Task
 from core.services.ai import apply_priorities, generate_digest
 from core.services.config import cfg
+from core.services.dates import normalize_due, utc_now
 from core.services.messaging import send_notification, user_phone
 from core.services.notification_prefs import get_notification_prefs
 from core.services.sync_buzz import sync_buzz
@@ -31,11 +31,11 @@ def sync_source(source):
         return {"count": 0, "error": "unknown source"}
     try:
         n = fn()
-        LAST_SYNC[source] = datetime.utcnow().isoformat()
+        LAST_SYNC[source] = timezone.now().isoformat()
         apply_priorities()
         return {"count": n, "error": None}
     except Exception as exc:
-        LAST_SYNC[source] = datetime.utcnow().isoformat()
+        LAST_SYNC[source] = timezone.now().isoformat()
         return {"count": 0, "error": str(exc)[:300]}
 
 
@@ -47,8 +47,11 @@ def sync_all():
             summary[source] = {"count": n, "error": None}
         except Exception as exc:
             summary[source] = {"count": 0, "error": str(exc)[:200]}
-        LAST_SYNC[source] = datetime.utcnow().isoformat()
-    apply_priorities()
+        LAST_SYNC[source] = timezone.now().isoformat()
+    try:
+        apply_priorities()
+    except Exception:
+        pass
     return summary
 
 
@@ -75,17 +78,18 @@ def _reminders():
     if not prefs.get("reminders_enabled", True):
         return
     hours_before = int(prefs.get("reminder_hours_before", 2))
-    now = datetime.utcnow()
+    now = utc_now()
     window_end = now + timedelta(hours=hours_before)
     tasks = Task.objects.for_worklist().filter(is_completed=False, due_date__isnull=False)
     for t in tasks:
-        if t.due_date < now or t.due_date > window_end:
+        due = normalize_due(t.due_date)
+        if not due or due < now or due > window_end:
             continue
         if Notification.objects.filter(task=t).exists():
             continue
         msg = (
             f"NEXUS reminder: '{t.title}' ({t.course_name or t.source}) is due "
-            f"{t.due_date.strftime('%b %d %H:%M')}."
+            f"{due.strftime('%b %d %H:%M')}."
         )
         ch = (cfg("NOTIFICATION_CHANNEL") or "sms").lower()
         Notification.objects.create(task=t, channel=ch, message=msg)
@@ -130,6 +134,10 @@ def start_scheduler():
     global _scheduler
     if _scheduler:
         return _scheduler
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+    except ImportError:
+        return None
     try:
         sch = BackgroundScheduler()
         sch.start()

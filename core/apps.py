@@ -10,6 +10,9 @@ class CoreConfig(AppConfig):
 
         if any(cmd in sys.argv for cmd in ("migrate", "makemigrations", "test", "shell")):
             return
-        from core.services import scheduler  # noqa: F401
+        try:
+            from core.services import scheduler  # noqa: F401
 
-        scheduler.start_scheduler()
+            scheduler.start_scheduler()
+        except ImportError:
+            pass

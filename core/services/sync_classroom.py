@@ -1,27 +1,15 @@
-from datetime import datetime
-
 from googleapiclient.discovery import build
 
 from core.models import Task
 from core.services.auth_google import get_google_credentials
 from core.services.config import upsert_task
+from core.services.dates import classroom_due
 
 _DONE_STATES = frozenset({
     "TURNED_IN",
     "RETURNED",
     "STUDENT_EDITED_AFTER_TURN_IN",
 })
-
-
-def _due(cw):
-    d = cw.get("dueDate")
-    if not d:
-        return None
-    t = cw.get("dueTime", {})
-    try:
-        return datetime(d["year"], d["month"], d["day"], t.get("hours", 23), t.get("minutes", 59))
-    except Exception:
-        return None
 
 
 def _paginate(fetch_page):
@@ -175,7 +163,7 @@ def sync_classroom():
                 external_id=ext_id,
                 title=w.get("title", "(untitled)"),
                 description=w.get("description", ""),
-                due_date=_due(w),
+                due_date=classroom_due(w),
                 course_name=cname,
             )
             if handed_in is not None:
