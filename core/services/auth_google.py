@@ -104,6 +104,16 @@ def get_account_info():
     }
 
 
+def disconnect_google():
+    s = UserSession.objects.first()
+    if not s:
+        return
+    s.google_refresh_token = None
+    s.google_email = None
+    s.save(update_fields=["google_refresh_token", "google_email"])
+    Task.objects.filter(source__in=["gmail", "classroom", "news"]).delete()
+
+
 def auth_google_redirect():
     flow = _flow()
     url, _ = flow.authorization_url(
@@ -123,15 +133,24 @@ def auth_google_callback(code: str = ""):
         return redirect(f"/settings?oauth_error={quote(str(exc)[:200])}")
     s = get_or_create_session()
     old_email = (s.google_email or "").strip().lower()
-    if creds.refresh_token:
-        s.google_refresh_token = creds.refresh_token
+    if not creds.refresh_token:
+        return redirect(
+            "/settings?oauth_error="
+            + quote("No refresh token returned. Click Disconnect Google, then Connect again.")
+        )
+    s.google_refresh_token = creds.refresh_token
     email = _fetch_google_email(creds.token)
-    if email:
-        new_email = email.strip().lower()
-        if old_email and old_email != new_email:
-            Task.objects.filter(source__in=["gmail", "classroom", "news"]).delete()
-        s.google_email = new_email
+    if not email:
+        return redirect("/settings?oauth_error=" + quote("Could not read Google account email."))
+    new_email = email.strip().lower()
+    if old_email and old_email != new_email:
+        Task.objects.filter(source__in=["gmail", "classroom", "news"]).delete()
+    s.google_email = new_email
     s.save()
+    granted = set(creds.scopes or [])
+    missing = [scope for scope in SCOPES if scope not in granted]
+    if missing:
+        return redirect("/settings?oauth=ok&scopes=missing")
     return redirect("/settings?oauth=ok")
 
 
@@ -151,9 +170,19 @@ def get_google_credentials():
         creds.refresh(Request())
     except Exception:
         return None
+    token_email = _fetch_google_email(creds.token) if creds.token else None
+    if token_email:
+        token_email = token_email.strip().lower()
+        stored = (s.google_email or "").strip().lower()
+        if stored and stored != token_email:
+            disconnect_google()
+            return None
+        if not stored:
+            s.google_email = token_email
+            s.save(update_fields=["google_email"])
     if not s.google_email and creds.token:
         email = _fetch_google_email(creds.token)
         if email:
-            s.google_email = email
+            s.google_email = email.strip().lower()
             s.save(update_fields=["google_email"])
     return creds

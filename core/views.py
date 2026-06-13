@@ -11,6 +11,7 @@ from core.services.ai import apply_priorities, detect_conflicts, generate_digest
 from core.services.auth_google import (
     auth_google_callback,
     auth_google_redirect,
+    disconnect_google,
     get_account_info,
     google_scope_status,
     is_admin,
@@ -278,6 +279,13 @@ def auth_google(request):
 @require_GET
 def auth_google_cb(request):
     return auth_google_callback(request.GET.get("code", ""))
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def auth_google_disconnect(request):
+    disconnect_google()
+    return _json({"ok": True})
 
 
 @csrf_exempt

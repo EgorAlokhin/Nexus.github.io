@@ -184,7 +184,7 @@ function _renderUndatedStrip(el, tasks, { source = "", panelLink = false } = {})
     `<div class="cal-overdue-list">${undated.map(_undatedRowHtml).join("")}</div>` +
     `</details>` +
     (panelLink
-      ? `<button type="button" class="cal-more" style="margin-top:6px" onclick="showUndatedPanel()">Show all in panel below</button>`
+      ? `<button type="button" class="cal-more" id="cal-undated-panel-btn" style="margin-top:6px" onclick="toggleUndatedPanel()">Show all in panel below</button>`
       : "");
 }
 
@@ -236,6 +236,36 @@ async function toggleDone(id) {
 let _calDate = new Date();
 let _calTasks = [];
 let _calByDay = {};
+let _calPanelMode = null;
+
+function collapseCalPanel() {
+  _calPanelMode = null;
+  const title = document.getElementById("detail-title");
+  const hint = document.getElementById("detail-hint");
+  const body = document.getElementById("detail-body");
+  const collapseBtn = document.getElementById("detail-collapse-btn");
+  if (title) title.textContent = "DAY / TASK";
+  if (hint) hint.textContent = "Click a day with +more or any task.";
+  if (body) body.innerHTML = "";
+  if (collapseBtn) collapseBtn.hidden = true;
+  _updateUndatedPanelBtn();
+}
+
+function _updateUndatedPanelBtn() {
+  const btn = document.getElementById("cal-undated-panel-btn");
+  if (!btn) return;
+  btn.textContent = _calPanelMode === "undated"
+    ? "Hide panel below"
+    : "Show all in panel below";
+}
+
+function toggleUndatedPanel() {
+  if (_calPanelMode === "undated") {
+    collapseCalPanel();
+    return;
+  }
+  showUndatedPanel();
+}
 
 function _startOfDay(d) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -319,6 +349,7 @@ function showUndatedPanel() {
   const title = document.getElementById("detail-title");
   const hint = document.getElementById("detail-hint");
   const body = document.getElementById("detail-body");
+  const collapseBtn = document.getElementById("detail-collapse-btn");
   if (title) title.textContent = "NO DUE DATE";
   if (hint) hint.textContent = `${items.length} open task${items.length === 1 ? "" : "s"} without a deadline`;
   if (body) {
@@ -326,6 +357,9 @@ function showUndatedPanel() {
       ? items.map(_taskDetailHtml).join("")
       : '<div class="muted">No undated tasks.</div>';
   }
+  _calPanelMode = "undated";
+  if (collapseBtn) collapseBtn.hidden = false;
+  _updateUndatedPanelBtn();
 }
 
 function showCalDay(y, m, day) {
@@ -333,9 +367,13 @@ function showCalDay(y, m, day) {
   const title = document.getElementById("detail-title");
   const hint = document.getElementById("detail-hint");
   const body = document.getElementById("detail-body");
+  const collapseBtn = document.getElementById("detail-collapse-btn");
   if (title) title.textContent = new Date(y, m, day).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   if (hint) hint.textContent = `${items.length} task${items.length === 1 ? "" : "s"}`;
   if (body) body.innerHTML = items.length ? items.map(_taskDetailHtml).join("") : '<div class="muted">No tasks this day.</div>';
+  _calPanelMode = "day";
+  if (collapseBtn) collapseBtn.hidden = false;
+  _updateUndatedPanelBtn();
 }
 
 function showDetail(id) {
@@ -344,6 +382,7 @@ function showDetail(id) {
   const title = document.getElementById("detail-title");
   const hint = document.getElementById("detail-hint");
   const body = document.getElementById("detail-body");
+  const collapseBtn = document.getElementById("detail-collapse-btn");
   if (title) title.textContent = "TASK";
   if (hint) {
     hint.textContent = !_hasDueDate(t)
@@ -353,6 +392,9 @@ function showDetail(id) {
         : fmtDate(t.due_date, t.source);
   }
   if (body) body.innerHTML = _taskDetailHtml(t);
+  _calPanelMode = "task";
+  if (collapseBtn) collapseBtn.hidden = false;
+  _updateUndatedPanelBtn();
 }
 
 function renderCalendar() {
@@ -649,18 +691,26 @@ async function initSettings() {
   const params = new URLSearchParams(location.search);
   const banner = document.getElementById("oauth-banner");
   if (banner) {
-    if (params.get("oauth") === "ok") {
+    if (params.get("oauth") === "ok" && params.get("scopes") !== "missing") {
       banner.style.display = "block";
       banner.className = "oauth-banner ok";
       banner.textContent = "Google connected successfully.";
+    } else if (params.get("oauth") === "ok" && params.get("scopes") === "missing") {
+      banner.style.display = "block";
+      banner.className = "oauth-banner err";
+      banner.textContent =
+        "Google connected, but some Classroom permissions were not granted. Disconnect, then Connect again and accept ALL checkboxes.";
     } else if (params.get("oauth_error")) {
       banner.style.display = "block";
       banner.className = "oauth-banner err";
       banner.textContent = "Google OAuth failed: " + params.get("oauth_error");
     }
   }
-  const s = await getJSON("/api/status");
-  if (banner && s.google_needs_reconnect) {
+  const [s, account] = await Promise.all([
+    getJSON("/api/status"),
+    getJSON("/api/account"),
+  ]);
+  if (banner && s.google_needs_reconnect && params.get("oauth") !== "ok") {
     banner.style.display = "block";
     banner.className = "oauth-banner err";
     banner.textContent =
@@ -668,8 +718,28 @@ async function initSettings() {
   }
   const g = s.gmail && s.gmail.connected;
   const gs = document.getElementById("google-status");
-  if (gs) gs.innerHTML = g ? '<span class="dot on">●</span> Connected'
-    : '<span class="dot off">○</span> Not connected';
+  const ge = document.getElementById("google-email");
+  const connectBtn = document.getElementById("google-connect-btn");
+  const disconnectBtn = document.getElementById("google-disconnect-btn");
+  if (gs) {
+    gs.innerHTML = g
+      ? '<span class="dot on">●</span> Connected'
+      : '<span class="dot off">○</span> Not connected';
+  }
+  if (ge) {
+    if (account.email) {
+      ge.textContent = "Signed in as " + account.email
+        + (account.google_missing_scopes && account.google_missing_scopes.length
+          ? " · missing permissions — disconnect and reconnect"
+          : "");
+    } else {
+      ge.textContent = g
+        ? "Connected (email unknown — try Disconnect, then Connect again)"
+        : "Not signed in. Each Google account must be added as a test user in Google Cloud Console while the app is in Testing mode.";
+    }
+  }
+  if (connectBtn) connectBtn.textContent = g ? "Switch Google account" : "Connect Google";
+  if (disconnectBtn) disconnectBtn.hidden = !g;
   ["gmail", "classroom", "buzz", "veracross"].forEach(k => {
     const c = s[k] || {};
     const el = document.getElementById("st-" + k);
@@ -690,6 +760,16 @@ async function syncOne(src, btn) {
   }
   if (btn) { btn.disabled = false; btn.textContent = o; }
   initSettings();
+}
+
+async function disconnectGoogle() {
+  if (!confirm("Disconnect Google and clear synced Gmail, Classroom, and news tasks?")) return;
+  try {
+    await postJSON("/auth/google/disconnect");
+    location.href = "/settings";
+  } catch (e) {
+    alert("Disconnect failed: " + e.message);
+  }
 }
 
 // ---------- COMPLETED ----------

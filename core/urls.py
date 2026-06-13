@@ -28,6 +28,7 @@ urlpatterns = [
     path("api/account", views.api_account),
     path("auth/google", views.auth_google),
     path("auth/google/callback", views.auth_google_cb),
+    path("auth/google/disconnect", views.auth_google_disconnect),
     path("ai/chat", views.ai_chat),
     path("ai/digest", views.ai_digest),
     path("api/settings", views.settings_api),

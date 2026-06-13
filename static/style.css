@@ -296,7 +296,8 @@ select { border: 1px solid var(--border); background: var(--bg); color: var(--te
 .quick button { text-align: left; text-transform: none; letter-spacing: 0; }
 
 .settings-row { border: 1px solid var(--border); padding: 12px; margin-bottom: 12px; }
-.settings-row .row-head { display: flex; justify-content: space-between; align-items: center; }
+.settings-row .row-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.settings-row .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .muted { color: var(--text-secondary); font-size: 12px; }
 
 .login-lead { max-width: 640px; line-height: 1.5; margin-bottom: 16px; }

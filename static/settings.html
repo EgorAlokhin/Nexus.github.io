@@ -28,8 +28,12 @@
       <div>
         <div class="status-name">Google (Gmail + Classroom)</div>
         <div class="muted" id="google-status">—</div>
+        <div class="muted" id="google-email"></div>
       </div>
-      <a class="btn" href="/auth/google">Connect Google</a>
+      <div class="row-actions">
+        <a class="btn" href="/auth/google" id="google-connect-btn">Connect Google</a>
+        <button type="button" class="btn" id="google-disconnect-btn" onclick="disconnectGoogle()" hidden>Disconnect</button>
+      </div>
     </div>
   </div>
 
@@ -91,7 +95,7 @@
     </div>
   </div>
 </div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=13"></script>
 <script>initSettings();</script>
 </body>
 </html>

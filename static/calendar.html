@@ -27,14 +27,17 @@
     </div>
     <div class="detail-panel cal-detail-bottom" id="detail">
       <div class="cal-detail-head">
-        <div class="section-h" id="detail-title">DAY / TASK</div>
-        <div class="muted" id="detail-hint">Click a day with +more or any task.</div>
+        <div>
+          <div class="section-h" id="detail-title">DAY / TASK</div>
+          <div class="muted" id="detail-hint">Click a day with +more or any task.</div>
+        </div>
+        <button type="button" class="cal-more" id="detail-collapse-btn" onclick="collapseCalPanel()" hidden>Collapse</button>
       </div>
       <div id="detail-body" class="cal-detail-strip"></div>
     </div>
   </div>
 </div>
-<script src="/static/app.js?v=12"></script>
+<script src="/static/app.js?v=13"></script>
 <script>initCalendar();</script>
 </body>
 </html>
