@@ -101,9 +101,12 @@ def _purge_junk_gmail():
 def sync_gmail():
     creds = get_google_credentials()
     if not creds:
-        return 0
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    resp = service.users().messages().list(userId="me", q=GMAIL_QUERY, maxResults=50).execute()
+        raise ValueError("Google not connected — use Settings → Connect Google")
+    try:
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        resp = service.users().messages().list(userId="me", q=GMAIL_QUERY, maxResults=50).execute()
+    except Exception as exc:
+        raise ValueError(f"Gmail API error: {exc}") from exc
     count = 0
     seen_ids = set()
     for m in resp.get("messages", []):

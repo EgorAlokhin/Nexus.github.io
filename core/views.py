@@ -128,18 +128,27 @@ def library_page(request):
     return _page("library.html")
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def sync_all_view(request):
-    return _json(sync_all())
+    try:
+        return _json(sync_all())
+    except Exception as exc:
+        return _json({"error": str(exc)[:300]}, status=200)
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def sync_one_view(request, source):
     if source not in SOURCES:
         return _json({"error": "unknown source"}, status=404)
-    return _json({source: sync_source(source)})
+    try:
+        return _json({source: sync_source(source)})
+    except Exception as exc:
+        return _json({source: {"count": 0, "error": str(exc)[:300]}}, status=200)
 
 
+@csrf_exempt
 @require_http_methods(["GET", "POST"])
 def test_notification(request):
     sms_from = _sms_from() or "your Twilio number"
@@ -150,6 +159,7 @@ def test_notification(request):
     return _json({"ok": ok, "channel": "sms", "detail": detail})
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def purge_gmail_junk_view(request):
     n = purge_gmail_junk()
@@ -207,6 +217,7 @@ def api_library(request):
     return _json(library_payload())
 
 
+@csrf_exempt
 @require_http_methods(["PATCH", "POST"])
 def complete_task(request, task_id):
     t = Task.objects.filter(pk=task_id).first()
@@ -273,6 +284,7 @@ def ai_chat(request):
     ))
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 def ai_digest(request):
     tasks = list(Task.objects.for_worklist().filter(is_completed=False))

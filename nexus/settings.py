@@ -94,6 +94,10 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "egor.alokhin@gmail.com")
 # Cerebras AI
 CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 CEREBRAS_BASE_URL = os.getenv("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1")
+CEREBRAS_MODEL_FAST = os.getenv("CEREBRAS_MODEL_FAST", "gpt-oss-120b")
+CEREBRAS_MODEL_STANDARD = os.getenv("CEREBRAS_MODEL_STANDARD", "gpt-oss-120b")
+CEREBRAS_MODEL_ADVANCED = os.getenv("CEREBRAS_MODEL_ADVANCED", "zai-glm-4.7")
+CEREBRAS_MODEL_FALLBACK = os.getenv("CEREBRAS_MODEL_FALLBACK", "gpt-oss-120b")
 
 # Google OAuth
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")

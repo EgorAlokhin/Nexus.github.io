@@ -95,7 +95,17 @@ async function initDashboard() {
 }
 async function syncAll(btn) {
   if (btn) { btn.disabled = true; btn.textContent = "Syncing..."; }
-  try { await postJSON("/sync/all"); } catch (e) {}
+  try {
+    const r = await postJSON("/sync/all");
+    const lines = Object.entries(r || {}).map(([src, info]) => {
+      const count = typeof info === "object" ? info.count : info;
+      const err = typeof info === "object" ? info.error : null;
+      return err ? `${src}: failed (${err})` : `${src}: ${count} items`;
+    });
+    if (lines.length) alert("Sync complete\n\n" + lines.join("\n"));
+  } catch (e) {
+    alert("Sync failed: " + e.message);
+  }
   location.reload();
 }
 async function loadStatus() {
@@ -580,7 +590,14 @@ async function initSettings() {
 async function syncOne(src, btn) {
   const o = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
-  try { await postJSON("/sync/" + src); } catch (e) {}
+  try {
+    const r = await postJSON("/sync/" + src);
+    const info = r && r[src];
+    if (info && info.error) alert(`${src} sync failed: ${info.error}`);
+    else if (info) alert(`${src}: synced ${info.count ?? info} items`);
+  } catch (e) {
+    alert(`${src} sync failed: ${e.message}`);
+  }
   if (btn) { btn.disabled = false; btn.textContent = o; }
   initSettings();
 }

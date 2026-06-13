@@ -1,8 +1,44 @@
-"""Pick Cerebras model tier from message complexity."""
+"""Pick Cerebras model tier from message complexity.
 
-MODEL_FAST = "llama-3.1-8b"
-MODEL_STANDARD = "llama-3.3-70b"
-MODEL_ADVANCED = "qwen-3-32b"
+Current public Cerebras models (2026): gpt-oss-120b, zai-glm-4.7.
+Llama/Qwen IDs were deprecated — see https://inference-docs.cerebras.ai/support/deprecation
+"""
+
+from django.conf import settings
+
+from core.services.config import cfg
+
+DEFAULT_FAST = "gpt-oss-120b"
+DEFAULT_STANDARD = "gpt-oss-120b"
+DEFAULT_ADVANCED = "zai-glm-4.7"
+DEFAULT_FALLBACK = "gpt-oss-120b"
+
+
+def _resolved(name, default):
+    return cfg(name, getattr(settings, name, default)) or default
+
+
+def model_fast():
+    return _resolved("CEREBRAS_MODEL_FAST", DEFAULT_FAST)
+
+
+def model_standard():
+    return _resolved("CEREBRAS_MODEL_STANDARD", DEFAULT_STANDARD)
+
+
+def model_advanced():
+    return _resolved("CEREBRAS_MODEL_ADVANCED", DEFAULT_ADVANCED)
+
+
+def model_fallback():
+    return _resolved("CEREBRAS_MODEL_FALLBACK", DEFAULT_FALLBACK)
+
+
+# Back-compat aliases (defaults only — use functions for runtime cfg overrides)
+MODEL_FAST = DEFAULT_FAST
+MODEL_STANDARD = DEFAULT_STANDARD
+MODEL_ADVANCED = DEFAULT_ADVANCED
+MODEL_FALLBACK = DEFAULT_FALLBACK
 
 OPUS_TRIGGERS = (
     "perelman", "poincare", "poincaré", "poincare conjecture", "millennium prize",
@@ -50,27 +86,30 @@ def needs_web_search(message: str, *, has_attachment: bool = False) -> bool:
 def pick_model(message: str, *, has_attachment: bool = False, force_math: bool = False) -> str:
     msg = (message or "").lower().strip()
     words = len(msg.split())
+    advanced = model_advanced()
+    standard = model_standard()
+    fast = model_fast()
 
     if any(t in msg for t in OPUS_TRIGGERS):
-        return MODEL_ADVANCED
+        return advanced
     if force_math and any(t in msg for t in ("proof", "theorem", "conjecture", "topology", "manifold")):
-        return MODEL_ADVANCED
+        return advanced
     if has_attachment and words > 15:
-        return MODEL_STANDARD
+        return standard
     if any(t in msg for t in SONNET_TRIGGERS) or force_math:
-        return MODEL_STANDARD
+        return standard
     if words > 120 or (words > 40 and "?" in msg):
-        return MODEL_STANDARD
+        return standard
     if words <= 18 and not has_attachment:
-        return MODEL_FAST
-    return MODEL_STANDARD
+        return fast
+    return standard
 
 
 def tier_label(model: str) -> str:
-    if model == MODEL_ADVANCED:
+    if model == MODEL_ADVANCED or model == DEFAULT_ADVANCED:
         return "advanced"
-    if model == MODEL_STANDARD:
+    if model == MODEL_STANDARD or model == DEFAULT_STANDARD:
         return "standard"
-    if model == MODEL_FAST:
+    if model == MODEL_FAST or model == DEFAULT_FAST:
         return "fast"
-    return model
+    return model.split("-")[0] if model else "unknown"

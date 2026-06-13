@@ -3,15 +3,17 @@ import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+from django.utils import timezone
+
 from django.conf import settings
 from openai import OpenAI
 
 from core.models import ChatMessage, Task
 from core.services.config import cfg
 from core.services.model_select import (
-    MODEL_ADVANCED,
-    MODEL_FAST,
-    MODEL_STANDARD,
+    model_advanced,
+    model_fallback,
+    model_fast,
     needs_web_search,
     pick_model,
     tier_label,
@@ -33,11 +35,22 @@ def _client():
 
 
 def _create_message(model, system, messages, max_tokens=2048):
-    resp = _client().chat.completions.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[{"role": "system", "content": system}, *messages],
-    )
+    client = _client()
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "system", "content": system}, *messages],
+    }
+    try:
+        resp = client.chat.completions.create(**payload)
+    except Exception as exc:
+        err = str(exc).lower()
+        fallback = model_fallback()
+        if model != fallback and ("model_not_found" in err or "does not exist" in err):
+            payload["model"] = fallback
+            resp = client.chat.completions.create(**payload)
+        else:
+            raise
     return (resp.choices[0].message.content or "").strip() or "(no response)"
 
 
@@ -119,11 +132,14 @@ def _fmt_tasks(tasks):
 
 def prioritize_tasks(tasks):
     out = []
-    now = datetime.utcnow()
+    now = timezone.now()
     for t in tasks:
         score = 5
         if t.due_date:
-            days = (t.due_date - now).total_seconds() / 86400
+            due = t.due_date
+            if timezone.is_naive(due):
+                due = timezone.make_aware(due, timezone.utc)
+            days = (due - now).total_seconds() / 86400
             if days < 1:
                 score += 4
             elif days < 2:
@@ -164,9 +180,14 @@ def detect_conflicts(tasks):
 
 
 def generate_digest(tasks):
-    now = datetime.utcnow()
+    now = timezone.now()
     upcoming = sorted(
-        [t for t in tasks if not t.is_completed and t.due_date and now <= t.due_date <= now + timedelta(days=7)],
+        [
+            t for t in tasks
+            if not t.is_completed and t.due_date
+            and (timezone.make_aware(t.due_date, timezone.utc) if timezone.is_naive(t.due_date) else t.due_date) >= now
+            and (timezone.make_aware(t.due_date, timezone.utc) if timezone.is_naive(t.due_date) else t.due_date) <= now + timedelta(days=7)
+        ],
         key=lambda t: t.due_date,
     )
     if not upcoming:
@@ -177,7 +198,7 @@ def generate_digest(tasks):
         "Plain text only, max 1500 characters. Group by day; flag overloaded days (3+ items) with OVERLOAD."
     )
     user = f"Tasks due in next 7 days:\n{_fmt_tasks(upcoming)}\n\nOverloaded days:\n" + ("\n".join(conflicts) or "none")
-    model = MODEL_FAST
+    model = model_fast()
     try:
         out = _create_message(model, sys, [{"role": "user", "content": user}], max_tokens=1024)
     except Exception:
@@ -218,7 +239,7 @@ def chat_reply(message, tasks, history, attachment_kind=None, attachment_data=No
             model,
             sys,
             msgs,
-            max_tokens=4096 if model == MODEL_ADVANCED else 2048,
+            max_tokens=4096 if model == model_advanced() else 2048,
         )
         return reply, model
     except Exception as e:
@@ -238,7 +259,7 @@ def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_
             model,
             sys,
             [{"role": "user", "content": user_content}],
-            max_tokens=4096 if model == MODEL_ADVANCED else 2048,
+            max_tokens=4096 if model == model_advanced() else 2048,
         )
         return reply, model
     except Exception as e:

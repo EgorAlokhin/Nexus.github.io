@@ -28,23 +28,25 @@ _scheduler = None
 def sync_source(source):
     fn = SYNCERS.get(source)
     if not fn:
-        return 0
+        return {"count": 0, "error": "unknown source"}
     try:
         n = fn()
-    except Exception:
-        n = 0
-    LAST_SYNC[source] = datetime.utcnow().isoformat()
-    apply_priorities()
-    return n
+        LAST_SYNC[source] = datetime.utcnow().isoformat()
+        apply_priorities()
+        return {"count": n, "error": None}
+    except Exception as exc:
+        LAST_SYNC[source] = datetime.utcnow().isoformat()
+        return {"count": 0, "error": str(exc)[:300]}
 
 
 def sync_all():
     summary = {}
     for source, fn in SYNCERS.items():
         try:
-            summary[source] = fn()
-        except Exception:
-            summary[source] = 0
+            n = fn()
+            summary[source] = {"count": n, "error": None}
+        except Exception as exc:
+            summary[source] = {"count": 0, "error": str(exc)[:200]}
         LAST_SYNC[source] = datetime.utcnow().isoformat()
     apply_priorities()
     return summary
