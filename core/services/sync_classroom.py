@@ -24,6 +24,75 @@ def _due(cw):
         return None
 
 
+def _paginate(fetch_page):
+    items = []
+    page_token = None
+    while True:
+        resp = fetch_page(page_token)
+        if not resp:
+            break
+        items.extend(resp.get("items", []))
+        page_token = resp.get("nextPageToken")
+        if not page_token:
+            break
+    return items
+
+
+def _list_courses(service):
+    def fetch(page_token):
+        kwargs = {"courseStates": ["ACTIVE"], "pageSize": 100}
+        if page_token:
+            kwargs["pageToken"] = page_token
+        try:
+            resp = service.courses().list(**kwargs).execute()
+        except Exception:
+            return None
+        return {"items": resp.get("courses", []), "nextPageToken": resp.get("nextPageToken")}
+    return _paginate(fetch)
+
+
+def _list_course_work(service, course_id):
+    def fetch(page_token):
+        kwargs = {"courseId": course_id, "pageSize": 100}
+        if page_token:
+            kwargs["pageToken"] = page_token
+        try:
+            resp = service.courses().courseWork().list(**kwargs).execute()
+        except Exception:
+            return None
+        return {"items": resp.get("courseWork", []), "nextPageToken": resp.get("nextPageToken")}
+    return _paginate(fetch)
+
+
+def _list_course_work_materials(service, course_id):
+    def fetch(page_token):
+        kwargs = {"courseId": course_id, "pageSize": 100}
+        if page_token:
+            kwargs["pageToken"] = page_token
+        try:
+            resp = service.courses().courseWorkMaterials().list(**kwargs).execute()
+        except Exception:
+            return None
+        return {
+            "items": resp.get("courseWorkMaterial", []),
+            "nextPageToken": resp.get("nextPageToken"),
+        }
+    return _paginate(fetch)
+
+
+def _list_announcements(service, course_id):
+    def fetch(page_token):
+        kwargs = {"courseId": course_id, "pageSize": 100}
+        if page_token:
+            kwargs["pageToken"] = page_token
+        try:
+            resp = service.courses().announcements().list(**kwargs).execute()
+        except Exception:
+            return None
+        return {"items": resp.get("announcements", []), "nextPageToken": resp.get("nextPageToken")}
+    return _paginate(fetch)
+
+
 def _submission_is_done(sub):
     if not sub:
         return False
@@ -89,36 +158,45 @@ def sync_classroom():
     if not creds:
         return 0
     service = build("classroom", "v1", credentials=creds, cache_discovery=False)
-    courses = service.courses().list(courseStates=["ACTIVE"]).execute().get("courses", [])
+    courses = _list_courses(service)
     count = 0
     seen_ids = set()
     for c in courses:
         cid, cname = c["id"], c.get("name", "")
         submissions = _list_my_submissions(service, cid)
-        try:
-            work = service.courses().courseWork().list(courseId=cid).execute().get("courseWork", [])
-        except Exception:
-            work = []
+        work = _list_course_work(service, cid)
         for w in work:
             wid = w["id"]
             ext_id = f"{cid}:{wid}"
             seen_ids.add(ext_id)
             handed_in = _handed_in(service, cid, wid, submissions)
-            upsert_task(
+            kw = dict(
                 source="classroom",
                 external_id=ext_id,
                 title=w.get("title", "(untitled)"),
                 description=w.get("description", ""),
                 due_date=_due(w),
                 course_name=cname,
-                is_completed=handed_in if handed_in is not None else None,
+            )
+            if handed_in is not None:
+                kw["is_completed"] = handed_in
+            upsert_task(**kw)
+            count += 1
+        for mat in _list_course_work_materials(service, cid):
+            mid = mat["id"]
+            ext_id = f"{cid}:mat:{mid}"
+            seen_ids.add(ext_id)
+            upsert_task(
+                source="classroom",
+                external_id=ext_id,
+                title=mat.get("title", "(material)"),
+                description=mat.get("description", ""),
+                due_date=None,
+                course_name=cname,
+                is_completed=False,
             )
             count += 1
-        try:
-            anns = service.courses().announcements().list(courseId=cid).execute().get("announcements", [])
-        except Exception:
-            anns = []
-        for a in anns:
+        for a in _list_announcements(service, cid):
             txt = a.get("text", "")
             ann_id = f"{cid}:ann:{a['id']}"
             seen_ids.add(ann_id)

@@ -6,6 +6,8 @@ from django.conf import settings
 
 from core.models import Setting, Task
 
+_UNSET = object()
+
 
 def cfg(key, default=None):
     row = Setting.objects.filter(key=key).first()
@@ -67,10 +69,10 @@ def upsert_task(
     source,
     external_id,
     title,
-    due_date=None,
+    due_date=_UNSET,
     description="",
     course_name="",
-    is_completed=None,
+    is_completed=_UNSET,
 ):
     t = None
     if external_id:
@@ -78,13 +80,13 @@ def upsert_task(
     if t:
         if title:
             t.title = title
-        if due_date is not None:
+        if due_date is not _UNSET:
             t.due_date = due_date
         if description:
             t.description = description
         if course_name:
             t.course_name = course_name
-        if is_completed is not None:
+        if is_completed is not _UNSET:
             t.is_completed = bool(is_completed)
         t.save()
     else:
@@ -92,10 +94,10 @@ def upsert_task(
             source=source,
             external_id=external_id,
             title=title or "(untitled)",
-            due_date=due_date,
+            due_date=None if due_date is _UNSET else due_date,
             description=description or "",
             course_name=course_name or "",
-            is_completed=bool(is_completed) if is_completed is not None else False,
+            is_completed=bool(is_completed) if is_completed is not _UNSET else False,
         )
     return t
 

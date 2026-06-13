@@ -196,11 +196,17 @@ async function loadTasks() {
 function renderUndatedBoard() {
   const src = document.getElementById("f-source")?.value || "";
   _renderUndatedStrip(document.getElementById("dash-undated"), _tasks, { source: src });
+  const badge = document.getElementById("undated-count");
+  if (badge) {
+    let undated = _collectUndatedTasks(_tasks);
+    if (src) undated = undated.filter(t => t.source === src);
+    badge.textContent = undated.length;
+  }
 }
 function renderTaskTable() {
   const src = document.getElementById("f-source").value;
   const sort = document.getElementById("f-sort").value;
-  let rows = openTasksOnly(_tasks.slice()).filter(t => _hasDueDate(t));
+  let rows = openTasksOnly(_tasks.slice());
   if (src) rows = rows.filter(t => t.source === src);
   rows.sort((a, b) => {
     if (sort === "priority") return b.priority_score - a.priority_score;
@@ -211,7 +217,8 @@ function renderTaskTable() {
   document.querySelector("#task-table tbody").innerHTML = rows.map(t =>
     `<tr>` +
     `<td>${esc(t.title)}</td><td>${esc(t.course_name || "—")}</td>` +
-    `<td class="${srcClass(t.source)}">${t.source}</td><td>${fmtDate(t.due_date, t.source)}</td>` +
+    `<td class="${srcClass(t.source)}">${t.source}</td>` +
+    `<td>${_hasDueDate(t) ? fmtDate(t.due_date, t.source) : "No due date"}</td>` +
     `<td class="${pClass(t.priority_score)}">${t.priority_score}</td>` +
     `<td><input type="checkbox" onchange="toggleDone(${t.id})"></td></tr>`
   ).join("") || `<tr><td colspan="6" class="muted">No open tasks.</td></tr>`;
@@ -219,6 +226,7 @@ function renderTaskTable() {
 async function toggleDone(id) {
   await patchJSON(`/api/tasks/${id}/complete`);
   _tasks = _tasks.filter(t => t.id !== id);
+  renderUndatedBoard();
   renderTaskTable();
   loadUrgent();
   loadConflicts();
