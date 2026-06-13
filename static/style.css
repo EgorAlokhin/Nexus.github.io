@@ -279,10 +279,26 @@ select { border: 1px solid var(--border); background: var(--bg); color: var(--te
 
 .chat-layout { display: flex; gap: 16px; height: calc(100vh - 130px); }
 .chat-main { flex-grow: 1; display: flex; flex-direction: column; border: 1px solid var(--border); }
-.messages { flex-grow: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.msg { max-width: 75%; white-space: pre-wrap; line-height: 1.5; }
-.msg.user { align-self: flex-end; text-align: right; }
-.msg.assistant { align-self: flex-start; border-left: 2px solid var(--border); padding-left: 10px; }
+.messages { display: flex; flex-direction: column; gap: 12px; flex-grow: 1; overflow-y: auto; padding: 12px; }
+.msg { max-width: 85%; line-height: 1.55; }
+.msg.user { align-self: flex-end; text-align: right; white-space: pre-wrap; border: 1px solid var(--border); padding: 10px 12px; background: var(--bg-secondary); }
+.msg.assistant { align-self: flex-start; border-left: 2px solid var(--border); padding-left: 12px; padding-right: 8px; }
+.msg.assistant.chat-md { white-space: normal; max-width: 95%; }
+.chat-md p { margin: 0.6em 0; }
+.chat-md p:first-child { margin-top: 0; }
+.chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 { margin: 1em 0 0.4em; line-height: 1.25; }
+.chat-md ul, .chat-md ol { margin: 0.5em 0 0.8em; padding-left: 1.4em; }
+.chat-md li { margin: 0.25em 0; }
+.chat-md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+.chat-md table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 13px; }
+.chat-md th, .chat-md td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+.chat-md th { background: var(--bg-secondary); font-weight: 600; }
+.chat-md code { font-family: ui-monospace, monospace; font-size: 0.92em; background: var(--bg-secondary); padding: 1px 4px; border-radius: 3px; }
+.chat-md pre { background: var(--bg-secondary); border: 1px solid var(--border); padding: 10px; overflow-x: auto; margin: 0.8em 0; }
+.chat-md pre code { background: none; padding: 0; }
+.chat-md blockquote { margin: 0.8em 0; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+.chat-md .katex-display { margin: 0.8em 0; overflow-x: auto; }
+.chat-md strong { font-weight: 700; }
 .chat-attach-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--border); font-size: 12px; }
 .chat-file-label { cursor: pointer; border: 1px solid var(--border); padding: 4px 8px; }
 .chat-file-label input { display: none; }
@@ -326,3 +342,14 @@ select { border: 1px solid var(--border); background: var(--bg); color: var(--te
 .library-topics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .library-tag { font-size: 11px; border: 1px solid var(--border); padding: 2px 6px; text-transform: lowercase; }
 .library-match { margin-top: 10px; font-size: 12px; color: var(--text-secondary); font-style: italic; }
+
+.materials-list { display: flex; flex-direction: column; gap: 16px; }
+.material-card { border: 1px solid var(--border); padding: 16px; background: var(--surface); }
+.material-head { font-size: 13px; margin-bottom: 8px; }
+.material-title { margin: 0 0 10px; font-size: 17px; line-height: 1.3; }
+.material-body { margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; }
+.material-books-label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin: 12px 0 8px; color: var(--text-secondary); }
+.material-books { display: flex; flex-direction: column; gap: 8px; }
+.material-book-link { border: 1px solid var(--border); padding: 10px 12px; background: var(--bg-secondary); font-size: 13px; line-height: 1.4; }
+.material-book-link strong { display: block; margin-bottom: 2px; }
+.material-no-books { font-size: 13px; }

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexus / Chat</title>
 <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -18,7 +19,7 @@
   <div class="chat-layout">
     <div class="chat-main">
       <div class="messages" id="messages">
-        <div class="msg assistant">Nexus ready. Attach a file or ask about deadlines, workload, or math. Model: GPT-OSS (quick) → GPT-OSS (deep) → GLM-4.7 (advanced).</div>
+        <div class="msg assistant chat-md">Nexus ready.</div>
       </div>
       <div class="chat-attach-row">
         <label class="chat-file-label">
@@ -43,7 +44,11 @@
     </div>
   </div>
 </div>
-<script src="/static/app.js?v=3"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<script src="/static/app.js?v=14"></script>
 <script>initChat();</script>
 </body>
 </html>

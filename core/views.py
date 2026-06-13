@@ -18,7 +18,7 @@ from core.services.auth_google import (
     session_user,
 )
 from core.services.config import cfg, setting_set
-from core.services.library import library_payload
+from core.services.library import library_payload, materials_payload
 from core.services.messaging import (
     handle_twilio_incoming,
     messaging_status,
@@ -131,6 +131,11 @@ def library_page(request):
     return _page("library.html")
 
 
+@require_GET
+def materials_page(request):
+    return _page("materials.html")
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def sync_all_view(request):
@@ -218,6 +223,11 @@ def api_conflicts(request):
 @require_GET
 def api_library(request):
     return _json(library_payload())
+
+
+@require_GET
+def api_materials(request):
+    return _json(materials_payload())
 
 
 @csrf_exempt

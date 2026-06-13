@@ -14,10 +14,24 @@ function toggleTheme() {
 }
 initTheme();
 
-const NAV = [["/", "Dashboard"], ["/calendar", "Calendar"], ["/library", "Library"], ["/announcements", "Announcements"],
-  ["/completed", "Completed"], ["/chat", "Chat"], ["/notifications", "Notifications"],
+const NAV = [["/", "Dashboard"], ["/calendar", "Calendar"], ["/library", "Library"], ["/materials", "Materials"],
+  ["/announcements", "Announcements"], ["/completed", "Completed"], ["/chat", "Chat"], ["/notifications", "Notifications"],
   ["/login", "Your account"], ["/settings", "Settings"]];
 const CAL_PREVIEW = 3;
+
+const SOURCE_LABELS = {
+  gmail: "Gmail",
+  classroom: "Classroom",
+  buzz: "Buzz",
+  veracross: "Veracross",
+  news: "News",
+  activity: "Activity",
+};
+
+function sourceLabel(s) {
+  if (!s) return "—";
+  return SOURCE_LABELS[s] || s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 function renderSidebar(active) {
   const el = document.getElementById("sidebar");
@@ -113,7 +127,7 @@ async function loadStatus() {
   document.getElementById("status").innerHTML = ["gmail", "classroom", "buzz", "veracross"].map(k => {
     const c = s[k] || {};
     const dot = c.connected ? '<span class="dot on">●</span>' : '<span class="dot off">○</span>';
-    return `<div class="status-cell"><div class="status-name ${srcClass(k)}">${k}</div>` +
+    return `<div class="status-cell"><div class="status-name ${srcClass(k)}">${sourceLabel(k)}</div>` +
       `<div>${dot} ${c.connected ? "connected" : "not connected"} (${c.count || 0} open` +
       `${c.completed_count ? ", " + c.completed_count + " done" : ""})</div>` +
       `<div class="status-time">sync: ${c.last_sync ? fmtDate(c.last_sync) : "never"}</div></div>`;
@@ -127,7 +141,7 @@ async function loadUrgent() {
 }
 function taskCard(t) {
   const dueMeta = _hasDueDate(t) ? fmtDate(t.due_date, t.source) : "No due date";
-  return `<div class="card"><div class="src ${srcClass(t.source)}">${t.source}</div>` +
+  return `<div class="card"><div class="src ${srcClass(t.source)}">${sourceLabel(t.source)}</div>` +
     `<div class="title">${esc(t.title)}</div><div class="meta">${esc(t.course_name || "—")}</div>` +
     `<div class="meta">${dueMeta}</div>` +
     `<div class="pscore ${pClass(t.priority_score)}">priority ${t.priority_score}</div></div>`;
@@ -162,7 +176,7 @@ function _collectUndatedTasks(tasks) {
 function _undatedRowHtml(t) {
   const detailFn = typeof showDetail === "function" ? `showDetail(${t.id})` : "";
   return `<div class="cal-overdue-row"${detailFn ? ` onclick="${detailFn}"` : ""}>` +
-    `<span class="${srcClass(t.source)}">${esc(t.source)}</span> ` +
+    `<span class="${srcClass(t.source)}">${esc(sourceLabel(t.source))}</span> ` +
     `<span class="cal-overdue-title">${esc(t.title)}</span>` +
     `<span class="muted"> · ${esc(t.course_name || "—")}</span></div>`;
 }
@@ -217,7 +231,7 @@ function renderTaskTable() {
   document.querySelector("#task-table tbody").innerHTML = rows.map(t =>
     `<tr>` +
     `<td>${esc(t.title)}</td><td>${esc(t.course_name || "—")}</td>` +
-    `<td class="${srcClass(t.source)}">${t.source}</td>` +
+    `<td class="${srcClass(t.source)}">${sourceLabel(t.source)}</td>` +
     `<td>${_hasDueDate(t) ? fmtDate(t.due_date, t.source) : "No due date"}</td>` +
     `<td class="${pClass(t.priority_score)}">${t.priority_score}</td>` +
     `<td><input type="checkbox" onchange="toggleDone(${t.id})"></td></tr>`
@@ -305,7 +319,7 @@ function _taskDetailHtml(t) {
     : overdue
       ? `Overdue: ${fmtDate(t.due_date, t.source)}`
       : `Due: ${fmtDate(t.due_date, t.source)}`;
-  return `<div class="cal-detail-item${overdue ? " cal-detail-overdue" : ""}"><div class="${srcClass(t.source)}">${t.source}</div>` +
+  return `<div class="cal-detail-item${overdue ? " cal-detail-overdue" : ""}"><div class="${srcClass(t.source)}">${sourceLabel(t.source)}</div>` +
     `<strong>${esc(t.title)}</strong><div class="muted">${esc(t.course_name || "—")}</div>` +
     `<div class="muted">${dueLabel} · Priority: ${t.priority_score}</div>` +
     (t.description ? `<p>${esc(t.description)}</p>` : "") + `</div>`;
@@ -313,12 +327,12 @@ function _taskDetailHtml(t) {
 
 function _calTaskHtml(t) {
   return `<span class="cal-task ${srcClass(t.source)}" onclick="event.stopPropagation();showDetail(${t.id})">` +
-    `[${t.source.toUpperCase()}] ${esc(t.title)}</span>`;
+    `[${sourceLabel(t.source).toUpperCase()}] ${esc(t.title)}</span>`;
 }
 
 function _overdueRowHtml(t) {
   return `<div class="cal-overdue-row" onclick="showDetail(${t.id})">` +
-    `<span class="${srcClass(t.source)}">${esc(t.source)}</span> ` +
+    `<span class="${srcClass(t.source)}">${esc(sourceLabel(t.source))}</span> ` +
     `<span class="cal-overdue-title">${esc(t.title)}</span>` +
     `<span class="muted"> · ${fmtDate(t.due_date, t.source)}</span></div>`;
 }
@@ -482,7 +496,7 @@ function renderAnnouncements() {
     }
     const when = t.due_date ? fmtDate(t.due_date, t.source) : fmtDate(t.created_at, t.source);
     return `<article class="announcement-card">` +
-      `<div class="announcement-meta"><span class="${srcClass(t.source)}">${esc(t.source)}</span>` +
+      `<div class="announcement-meta"><span class="${srcClass(t.source)}">${esc(sourceLabel(t.source))}</span>` +
       ` · ${esc(t.course_name || "—")} · ${when}</div>` +
       `<h3 class="announcement-title">${esc(t.title)}</h3>` +
       (body ? `<p class="announcement-body">${esc(body)}</p>` : "") +
@@ -508,12 +522,66 @@ function initChat() {
   document.querySelectorAll(".quick button").forEach(b => b.onclick = () => {
     document.getElementById("chat-text").value = b.textContent; sendChat();
   });
+  const welcome = document.querySelector("#messages .msg.assistant");
+  if (welcome) {
+    welcome.classList.add("chat-md");
+    welcome.innerHTML = renderChatMarkdown(
+      "Nexus ready. Attach a file or ask about deadlines, workload, or math. " +
+      "Model: **GPT-OSS (quick)** → **GPT-OSS (deep)** → **GLM-4.7 (advanced)**."
+    );
+    typesetChat(welcome);
+  }
 }
+
+function renderChatMarkdown(text) {
+  if (!text) return "";
+  if (typeof marked === "undefined") return esc(text);
+  let src = String(text);
+  const math = [];
+  const stash = (block) => {
+    math.push(block);
+    return `%%MATH${math.length - 1}%%`;
+  };
+  src = src.replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => stash(`\\[${m}\\]`));
+  src = src.replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => stash(`\\(${m}\\)`));
+  src = src.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => stash(`$$${m}$$`));
+  src = src.replace(/(^|[^\$])\$(?!\$)([^\$\n]+?)\$(?!\$)/g, (_, pre, m) => pre + stash(`$${m}$`));
+  let html = marked.parse(src, { breaks: true, gfm: true });
+  math.forEach((block, i) => {
+    html = html.split(`%%MATH${i}%%`).join(block);
+  });
+  if (typeof DOMPurify !== "undefined") {
+    html = DOMPurify.sanitize(html, {
+      ADD_TAGS: ["mjx-container", "math", "semantics", "mrow", "mi", "mo", "mn"],
+      ADD_ATTR: ["class", "style", "xmlns", "display"],
+    });
+  }
+  return html;
+}
+
+function typesetChat(el) {
+  if (!el || typeof renderMathInElement !== "function") return;
+  renderMathInElement(el, {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "\\[", right: "\\]", display: true },
+      { left: "$", right: "$", display: false },
+      { left: "\\(", right: "\\)", display: false },
+    ],
+    throwOnError: false,
+  });
+}
+
 function addMsg(role, content) {
   _history.push({ role, content });
   const m = document.createElement("div");
-  m.className = "msg " + role;
-  m.textContent = content;
+  m.className = "msg " + role + (role === "assistant" ? " chat-md" : "");
+  if (role === "assistant") {
+    m.innerHTML = renderChatMarkdown(content);
+    typesetChat(m);
+  } else {
+    m.textContent = content;
+  }
   const box = document.getElementById("messages");
   box.appendChild(m);
   box.scrollTop = box.scrollHeight;
@@ -794,7 +862,7 @@ function renderCompletedTable() {
   document.querySelector("#task-table tbody").innerHTML = rows.map(t =>
     `<tr>` +
     `<td>${esc(t.title)}</td><td>${esc(t.course_name || "—")}</td>` +
-    `<td class="${srcClass(t.source)}">${t.source}</td><td>${fmtDate(t.due_date, t.source)}</td>` +
+    `<td class="${srcClass(t.source)}">${sourceLabel(t.source)}</td><td>${fmtDate(t.due_date, t.source)}</td>` +
     `<td class="${pClass(t.priority_score)}">${t.priority_score}</td>` +
     `<td><input type="checkbox" checked onchange="reopenTask(${t.id})"></td></tr>`
   ).join("") || `<tr><td colspan="6" class="muted">No completed tasks yet.</td></tr>`;
@@ -913,4 +981,43 @@ async function initLibrary() {
     all.innerHTML = (data.books || []).map(b => _bookCard(b, false)).join("") ||
       '<div class="muted">No books in catalog.</div>';
   }
+}
+
+function _materialBooksHtml(books) {
+  if (!books || !books.length) {
+    return '<div class="material-no-books muted">No library match yet — browse the full <a href="/library">Library</a>.</div>';
+  }
+  return `<div class="material-books">` + books.map(b =>
+    `<div class="material-book-link">` +
+    `<strong>${esc(b.title)}</strong>` +
+    `<span class="muted"> · ${esc(b.author)} · ${esc(b.location)}</span>` +
+    `</div>`
+  ).join("") + `</div>`;
+}
+
+function materialCard(m) {
+  const body = (m.description || "").trim();
+  return `<article class="material-card">` +
+    `<div class="material-head">` +
+    `<span class="${srcClass(m.source)}">${esc(sourceLabel(m.source))}</span>` +
+    `<span class="muted"> · ${esc(m.course_name || "—")}</span>` +
+    `</div>` +
+    `<h3 class="material-title">${esc(m.title)}</h3>` +
+    (body ? `<p class="material-body">${esc(body)}</p>` : "") +
+    `<div class="material-books-label">Suggested books</div>` +
+    _materialBooksHtml(m.books) +
+    `</article>`;
+}
+
+async function initMaterials() {
+  renderSidebar("/materials");
+  const root = document.getElementById("materials-root");
+  if (!root) return;
+  const data = await getJSON("/api/materials");
+  const rows = data.materials || [];
+  if (!rows.length) {
+    root.innerHTML = '<div class="muted">No Classroom materials yet. Connect Google and run Sync Classroom.</div>';
+    return;
+  }
+  root.innerHTML = `<div class="materials-list">${rows.map(materialCard).join("")}</div>`;
 }

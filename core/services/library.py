@@ -1,5 +1,6 @@
 """Filler library catalog — will move to a separate DB later."""
 
+import re
 from collections import Counter
 
 from core.models import Task
@@ -7,11 +8,14 @@ from core.models import Task
 LIBRARY_BOOKS = [
     {
         "id": 1,
-        "title": "Calculus: Early Transcendentals",
+        "title": "Calculus: Early Transcendentals (9th ed.)",
         "author": "James Stewart",
         "location": "AP Hub, Main building, 3rd floor; Studio",
-        "topics": ["calculus", "derivatives", "integrals", "limits"],
-        "courses": ["AP Calculus AB", "Calculus", "Mathematics"],
+        "topics": [
+            "calculus", "derivatives", "integrals", "limits", "parametric",
+            "parametric equations", "differentiation", "transcendentals",
+        ],
+        "courses": ["AP Calculus AB", "AP Calculus BC", "Calculus", "Mathematics"],
     },
     {
         "id": 2,
@@ -51,7 +55,7 @@ LIBRARY_BOOKS = [
         "author": "Cormen, Leiserson, Rivest & Stein",
         "location": "AP Hub, Main building, 4th floor; Studio",
         "topics": ["algorithms", "computer science", "data structures"],
-        "courses": ["Computer Science", "AP CS A", "Programming"],
+        "courses": ["Computer Science", "AP CS A", "AP Computer Science P", "Programming"],
     },
     {
         "id": 7,
@@ -67,7 +71,7 @@ LIBRARY_BOOKS = [
         "author": "Gregory Mankiw",
         "location": "AP Hub, Main building, 1st floor; Studio",
         "topics": ["economics", "microeconomics", "macroeconomics"],
-        "courses": ["Economics", "AP Microeconomics", "Social Studies"],
+        "courses": ["Economics", "AP Microeconomics", "AP Macroeconomics", "AP Economics", "Social Studies"],
     },
     {
         "id": 9,
@@ -86,6 +90,78 @@ LIBRARY_BOOKS = [
         "courses": ["World History", "AP World History", "Humanities"],
     },
 ]
+
+
+# Keywords in material titles map to library topic hints.
+_TOPIC_HINTS = {
+    "parametric": ("calculus", "parametric", "parametric equations"),
+    "calculus": ("calculus", "derivatives", "integrals", "limits"),
+    "derivative": ("calculus", "derivatives", "differentiation"),
+    "differentiat": ("calculus", "derivatives", "differentiation"),
+    "integral": ("calculus", "integrals"),
+    "limit": ("calculus", "limits"),
+    "economics": ("economics", "microeconomics", "macroeconomics"),
+    "biology": ("biology", "cells", "genetics"),
+    "chemistry": ("chemistry", "stoichiometry"),
+    "physics": ("physics", "mechanics", "electricity", "waves"),
+    "algorithm": ("algorithms", "computer science", "data structures"),
+    "history": ("history", "american history", "world history"),
+    "literature": ("american literature", "modernism"),
+    "gatsby": ("american literature", "modernism"),
+}
+
+
+def _book_dict(book):
+    return {
+        "id": book["id"],
+        "title": book["title"],
+        "author": book["author"],
+        "location": book["location"],
+        "topics": book["topics"],
+        "courses": book["courses"],
+    }
+
+
+def match_books_for_material(title="", description="", course_name="", limit=3):
+    text = f"{title} {description} {course_name}".lower()
+    tokens = set(re.findall(r"[a-z0-9]{3,}", text))
+    scored = []
+
+    for book in LIBRARY_BOOKS:
+        score = 0
+        for topic in book["topics"]:
+            if topic in text:
+                score += 8
+            else:
+                for token in tokens:
+                    if token in topic or topic in token:
+                        score += 3
+        for course in book["courses"]:
+            cl = course.lower()
+            cn = (course_name or "").lower()
+            if cl in text or cl in cn or cn in cl:
+                score += 6
+            elif any(part in cn for part in cl.split() if len(part) > 3):
+                score += 3
+        for hint, topics in _TOPIC_HINTS.items():
+            if hint in text or any(hint in t or t in hint for t in tokens):
+                for topic in book["topics"]:
+                    if topic in topics or any(t in topic for t in topics):
+                        score += 5
+        if score > 0:
+            scored.append((score, book))
+
+    scored.sort(key=lambda x: (-x[0], x[1]["title"]))
+    out = []
+    seen = set()
+    for _, book in scored:
+        if book["id"] in seen:
+            continue
+        seen.add(book["id"])
+        out.append(_book_dict(book))
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _course_workload():
@@ -131,3 +207,17 @@ def library_payload():
         "suggested": suggested,
         "workload_by_course": dict(workload.most_common(10)),
     }
+
+
+def materials_payload():
+    rows = Task.objects.filter(
+        source="classroom",
+        external_id__contains=":mat:",
+    ).order_by("-created_at")
+    materials = []
+    for t in rows:
+        d = t.as_dict()
+        d["is_material"] = True
+        d["books"] = match_books_for_material(t.title, t.description, t.course_name)
+        materials.append(d)
+    return {"materials": materials, "count": len(materials)}
