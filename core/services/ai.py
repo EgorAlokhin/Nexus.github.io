@@ -150,7 +150,10 @@ def prioritize_tasks(tasks):
             elif days < 7:
                 score += 1
         else:
-            score -= 1
+            if t.source == "classroom":
+                score += 1
+            else:
+                score -= 1
         if any(w in f"{t.title} {t.description or ''}".lower() for w in EXAM_WORDS):
             score += 2
         out.append((t.id, max(1, min(10, score))))

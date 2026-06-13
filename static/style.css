@@ -170,6 +170,7 @@ th { text-transform: uppercase; letter-spacing: 1px; font-size: 11px; }
   text-overflow: ellipsis;
 }
 .cal-overdue-details summary::-webkit-details-marker { display: none; }
+.cal-undated-details summary { color: var(--text-secondary); }
 .cal-overdue-list {
   display: none;
   max-height: 220px;

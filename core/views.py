@@ -1,6 +1,7 @@
 import json
 
 import httpx
+from django.db.models import F
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods
@@ -174,7 +175,7 @@ def api_tasks(request):
         q = q.filter(is_completed=True)
     elif completed == "false":
         q = q.filter(is_completed=False)
-    tasks = q.order_by("-due_date").all()
+    tasks = q.order_by(F("due_date").asc(nulls_last=True), "-priority_score").all()
     return _json([t.as_dict() for t in tasks])
 
 

@@ -90,7 +90,7 @@ async function initDashboard() {
   loadUrgent();
   loadConflicts();
   await loadTasks();
-  document.getElementById("f-source").onchange = renderTaskTable;
+  document.getElementById("f-source").onchange = () => { renderUndatedBoard(); renderTaskTable(); };
   document.getElementById("f-sort").onchange = renderTaskTable;
 }
 async function syncAll(btn) {
@@ -126,9 +126,10 @@ async function loadUrgent() {
     '<div class="muted">No urgent tasks. Run Sync All.</div>';
 }
 function taskCard(t) {
+  const dueMeta = _hasDueDate(t) ? fmtDate(t.due_date, t.source) : "No due date";
   return `<div class="card"><div class="src ${srcClass(t.source)}">${t.source}</div>` +
     `<div class="title">${esc(t.title)}</div><div class="meta">${esc(t.course_name || "—")}</div>` +
-    `<div class="meta">${fmtDate(t.due_date, t.source)}</div>` +
+    `<div class="meta">${dueMeta}</div>` +
     `<div class="pscore ${pClass(t.priority_score)}">priority ${t.priority_score}</div></div>`;
 }
 async function loadConflicts() {
@@ -146,14 +147,60 @@ function openTasksOnly(list) {
   return (list || []).filter(t => !t.is_completed && !isAnnouncement(t));
 }
 
+function openTasksOnly(list) {
+  return (list || []).filter(t => !t.is_completed && !isAnnouncement(t));
+}
+
+function _hasDueDate(t) {
+  return !!(t && t.due_date);
+}
+
+function _collectUndatedTasks(tasks) {
+  return (tasks || []).filter(t => !t.is_completed && !isAnnouncement(t) && !_hasDueDate(t));
+}
+
+function _undatedRowHtml(t) {
+  const detailFn = typeof showDetail === "function" ? `showDetail(${t.id})` : "";
+  return `<div class="cal-overdue-row"${detailFn ? ` onclick="${detailFn}"` : ""}>` +
+    `<span class="${srcClass(t.source)}">${esc(t.source)}</span> ` +
+    `<span class="cal-overdue-title">${esc(t.title)}</span>` +
+    `<span class="muted"> · ${esc(t.course_name || "—")}</span></div>`;
+}
+
+function _renderUndatedStrip(el, tasks, { source = "", panelLink = false } = {}) {
+  if (!el) return;
+  let undated = _collectUndatedTasks(tasks);
+  if (source) undated = undated.filter(t => t.source === source);
+  undated.sort((a, b) => b.priority_score - a.priority_score);
+  if (!undated.length) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML =
+    `<details class="cal-overdue-details cal-undated-details">` +
+    `<summary>No due date (${undated.length}) — click to expand</summary>` +
+    `<div class="cal-overdue-list">${undated.map(_undatedRowHtml).join("")}</div>` +
+    `</details>` +
+    (panelLink
+      ? `<button type="button" class="cal-more" style="margin-top:6px" onclick="showUndatedPanel()">Show all in panel below</button>`
+      : "");
+}
+
 async function loadTasks() {
   _tasks = openTasksOnly(await getJSON("/api/tasks?completed=false"));
+  renderUndatedBoard();
   renderTaskTable();
+}
+function renderUndatedBoard() {
+  const src = document.getElementById("f-source")?.value || "";
+  _renderUndatedStrip(document.getElementById("dash-undated"), _tasks, { source: src });
 }
 function renderTaskTable() {
   const src = document.getElementById("f-source").value;
   const sort = document.getElementById("f-sort").value;
-  let rows = openTasksOnly(_tasks.slice());
+  let rows = openTasksOnly(_tasks.slice()).filter(t => _hasDueDate(t));
   if (src) rows = rows.filter(t => t.source === src);
   rows.sort((a, b) => {
     if (sort === "priority") return b.priority_score - a.priority_score;
@@ -215,7 +262,11 @@ function calMove(delta) { _calDate.setMonth(_calDate.getMonth() + delta); render
 
 function _taskDetailHtml(t) {
   const overdue = _isOverdueTask(t);
-  const dueLabel = overdue ? `Overdue: ${fmtDate(t.due_date, t.source)}` : `Due: ${fmtDate(t.due_date, t.source)}`;
+  const dueLabel = !_hasDueDate(t)
+    ? "No due date"
+    : overdue
+      ? `Overdue: ${fmtDate(t.due_date, t.source)}`
+      : `Due: ${fmtDate(t.due_date, t.source)}`;
   return `<div class="cal-detail-item${overdue ? " cal-detail-overdue" : ""}"><div class="${srcClass(t.source)}">${t.source}</div>` +
     `<strong>${esc(t.title)}</strong><div class="muted">${esc(t.course_name || "—")}</div>` +
     `<div class="muted">${dueLabel} · Priority: ${t.priority_score}</div>` +
@@ -251,6 +302,24 @@ function renderOverdueStrip(tasks) {
     `</details>`;
 }
 
+function renderUndatedStrip(tasks) {
+  _renderUndatedStrip(document.getElementById("cal-undated"), tasks, { panelLink: true });
+}
+
+function showUndatedPanel() {
+  const items = _collectUndatedTasks(_calTasks).sort((a, b) => b.priority_score - a.priority_score);
+  const title = document.getElementById("detail-title");
+  const hint = document.getElementById("detail-hint");
+  const body = document.getElementById("detail-body");
+  if (title) title.textContent = "NO DUE DATE";
+  if (hint) hint.textContent = `${items.length} open task${items.length === 1 ? "" : "s"} without a deadline`;
+  if (body) {
+    body.innerHTML = items.length
+      ? items.map(_taskDetailHtml).join("")
+      : '<div class="muted">No undated tasks.</div>';
+  }
+}
+
 function showCalDay(y, m, day) {
   const items = _calByDay[day] || [];
   const title = document.getElementById("detail-title");
@@ -268,7 +337,13 @@ function showDetail(id) {
   const hint = document.getElementById("detail-hint");
   const body = document.getElementById("detail-body");
   if (title) title.textContent = "TASK";
-  if (hint) hint.textContent = _isOverdueTask(t) ? `Overdue · ${fmtDate(t.due_date, t.source)}` : fmtDate(t.due_date, t.source);
+  if (hint) {
+    hint.textContent = !_hasDueDate(t)
+      ? "No due date"
+      : _isOverdueTask(t)
+        ? `Overdue · ${fmtDate(t.due_date, t.source)}`
+        : fmtDate(t.due_date, t.source);
+  }
   if (body) body.innerHTML = _taskDetailHtml(t);
 }
 
@@ -279,6 +354,7 @@ function renderCalendar() {
   const today = new Date();
   _calByDay = _assignCalTasksByDay(_calTasks, y, m);
   renderOverdueStrip(_calTasks);
+  renderUndatedStrip(_calTasks);
   let cells = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => `<div class="dow">${d}</div>`).join("");
   for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
   for (let day = 1; day <= days; day++) {
