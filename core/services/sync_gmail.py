@@ -86,9 +86,18 @@ def is_relevant_gmail(subject, sender, snippet=""):
     return False
 
 
-def _purge_junk_gmail():
+def _current_user():
+    from core.services.context import get_current_account
+
+    a = get_current_account()
+    return a.user if a else None
+
+
+def _purge_junk_gmail(user=None):
+    if user is None:
+        user = _current_user()
     removed = 0
-    for t in Task.objects.filter(source="gmail"):
+    for t in Task.objects.filter(user=user, source="gmail"):
         lines = (t.description or "").split("\n", 1)
         sender = lines[0] if lines else ""
         snippet = lines[1] if len(lines) > 1 else ""
@@ -102,6 +111,7 @@ def sync_gmail():
     creds = get_google_credentials()
     if not creds:
         raise ValueError("Google not connected — use Settings → Connect Google")
+    owner = _current_user()
     try:
         service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         resp = service.users().messages().list(userId="me", q=GMAIL_QUERY, maxResults=50).execute()
@@ -134,13 +144,13 @@ def sync_gmail():
         )
         count += 1
 
-    for t in Task.objects.filter(source="gmail"):
+    for t in Task.objects.filter(user=owner, source="gmail"):
         if t.external_id and t.external_id not in seen_ids:
             t.delete()
 
-    _purge_junk_gmail()
+    _purge_junk_gmail(owner)
     return count
 
 
-def purge_gmail_junk():
-    return _purge_junk_gmail()
+def purge_gmail_junk(user=None):
+    return _purge_junk_gmail(user)

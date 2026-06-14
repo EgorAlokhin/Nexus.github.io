@@ -1,8 +1,11 @@
 const THEME_KEY = "nexus-theme";
+const SKIN_KEY = "nexus-skin";
 
 function initTheme() {
   const t = localStorage.getItem(THEME_KEY) || "light";
   document.documentElement.setAttribute("data-theme", t);
+  const skin = localStorage.getItem(SKIN_KEY) || "fresh";
+  document.documentElement.setAttribute("data-skin", skin);
 }
 function toggleTheme() {
   const cur = document.documentElement.getAttribute("data-theme");
@@ -12,11 +15,21 @@ function toggleTheme() {
   const btn = document.getElementById("theme-btn");
   if (btn) btn.textContent = next === "dark" ? "Light" : "Dark";
 }
+function currentSkin() {
+  return document.documentElement.getAttribute("data-skin") || "fresh";
+}
+function toggleSkin() {
+  const next = currentSkin() === "fresh" ? "classic" : "fresh";
+  document.documentElement.setAttribute("data-skin", next);
+  localStorage.setItem(SKIN_KEY, next);
+  const btn = document.getElementById("skin-btn");
+  if (btn) btn.textContent = next === "fresh" ? "Classic look" : "Fresh look";
+}
 initTheme();
 
 const NAV = [["/", "Dashboard"], ["/calendar", "Calendar"], ["/library", "Library"], ["/materials", "Materials"],
   ["/announcements", "Announcements"], ["/completed", "Completed"], ["/chat", "Chat"], ["/notifications", "Notifications"],
-  ["/login", "Your account"], ["/settings", "Settings"]];
+  ["/account", "Account"], ["/settings", "Settings"]];
 const CAL_PREVIEW = 3;
 
 const SOURCE_LABELS = {
@@ -33,15 +46,54 @@ function sourceLabel(s) {
   return SOURCE_LABELS[s] || s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function ensureNavChrome() {
+  if (!document.getElementById("nav-toggle")) {
+    const b = document.createElement("button");
+    b.id = "nav-toggle";
+    b.className = "nav-toggle";
+    b.setAttribute("aria-label", "Toggle menu");
+    b.innerHTML = "<span></span><span></span><span></span>";
+    b.onclick = toggleNav;
+    document.body.appendChild(b);
+  }
+  if (!document.getElementById("nav-backdrop")) {
+    const d = document.createElement("div");
+    d.id = "nav-backdrop";
+    d.className = "nav-backdrop";
+    d.onclick = closeNav;
+    document.body.appendChild(d);
+  }
+}
+function toggleNav() { document.body.classList.toggle("nav-open"); }
+function closeNav() { document.body.classList.remove("nav-open"); }
+
 function renderSidebar(active) {
   const el = document.getElementById("sidebar");
   if (!el) return;
+  ensureNavChrome();
   const cur = document.documentElement.getAttribute("data-theme");
   const label = cur === "dark" ? "Light" : "Dark";
   const links = NAV.map(([href, name]) =>
-    `<a href="${href}" class="${href === active ? "active" : ""}">${name}</a>`).join("");
+    `<a href="${href}" class="${href === active ? "active" : ""}" onclick="closeNav()">${name}</a>`).join("");
   el.innerHTML = `<div class="brand">NEXUS</div><nav>${links}</nav>` +
-    `<div class="theme-toggle"><button id="theme-btn" onclick="toggleTheme()">${label}</button></div>`;
+    `<div class="sidebar-footer">` +
+      `<div class="acct-line" id="sidebar-acct"></div>` +
+      `<div class="sidebar-controls">` +
+        `<button id="theme-btn" onclick="toggleTheme()">${label}</button>` +
+        `<a class="btn" href="/logout">Sign out</a>` +
+      `</div>` +
+    `</div>`;
+  loadSidebarAccount();
+}
+async function loadSidebarAccount() {
+  try {
+    const a = await getJSON("/api/account");
+    const el = document.getElementById("sidebar-acct");
+    if (!el) return;
+    const who = (a && (a.email || a.username)) || "";
+    el.textContent = who;
+    el.title = who;
+  } catch (e) { /* not signed in */ }
 }
 
 async function getJSON(url) { const r = await fetch(url); return r.json(); }
@@ -101,11 +153,74 @@ async function initDashboard() {
   const td = document.getElementById("today");
   if (td) td.textContent = todayStr();
   loadStatus();
+  loadCourses();
   loadUrgent();
   loadConflicts();
   await loadTasks();
   document.getElementById("f-source").onchange = () => { renderUndatedBoard(); renderTaskTable(); };
   document.getElementById("f-sort").onchange = renderTaskTable;
+}
+
+// ---------- CLASSES (per-course, deduped) ----------
+let _courses = [];
+async function loadCourses() {
+  const root = document.getElementById("courses");
+  if (!root) return;
+  try {
+    const data = await getJSON("/api/courses");
+    _courses = data.courses || [];
+  } catch (e) {
+    _courses = [];
+  }
+  const badge = document.getElementById("courses-count");
+  if (badge) badge.textContent = _courses.length;
+  if (!_courses.length) {
+    root.innerHTML = '<div class="muted">No classes yet. Connect Google + Veracross on your Account, then Sync All.</div>';
+    return;
+  }
+  root.innerHTML = _courses.map(courseCard).join("");
+}
+function gradeClass(c) {
+  const n = c.grade && c.grade.achieved ? parseFloat(c.grade.achieved) : null;
+  if (n == null) return "";
+  return n >= 90 ? "grade-a" : n >= 80 ? "grade-b" : n >= 70 ? "grade-c" : "grade-d";
+}
+function courseCard(c) {
+  const grade = c.grade_display
+    ? `<span class="course-grade ${gradeClass(c)}">${esc(c.grade_display)}</span>`
+    : `<span class="course-grade muted">no grade</span>`;
+  const srcDots = (c.sources || []).map(s =>
+    `<span class="src-pill ${srcClass(s)}">${esc(sourceLabel(s))}</span>`).join("");
+  const open = (c.tasks || []).filter(t => !t.is_completed);
+  const taskRows = open.length
+    ? open.map(t =>
+        `<div class="course-task" ${typeof showCourseTask === "function" ? `onclick="showCourseTask(${t.id})"` : ""}>` +
+          `<span class="ct-src ${srcClass(t.source)}">${esc(sourceLabel(t.source))}</span>` +
+          `<span class="ct-title">${esc(t.title)}</span>` +
+          `<span class="ct-due">${_hasDueDate(t) ? fmtDate(t.due_date, t.source) : "—"}</span>` +
+        `</div>`).join("")
+    : '<div class="muted course-empty">No open tasks. Nice.</div>';
+  return `<details class="course-card">` +
+    `<summary class="course-head">` +
+      `<span class="course-name">${esc(c.name)}</span>` +
+      `<span class="course-head-right">${grade}` +
+      `<span class="course-open">${c.open_count} open</span></span>` +
+    `</summary>` +
+    `<div class="course-body">` +
+      `<div class="course-meta">${srcDots}` +
+        (c.grade_source ? `<span class="muted"> · grade via ${esc(c.grade_source)}</span>` : "") +
+        (c.done_count ? `<span class="muted"> · ${c.done_count} done</span>` : "") +
+      `</div>` +
+      `<div class="course-tasks">${taskRows}</div>` +
+    `</div>` +
+  `</details>`;
+}
+function showCourseTask(id) {
+  const t = (_tasks || []).find(x => x.id === id) ||
+    _courses.flatMap(c => c.tasks || []).find(x => x.id === id);
+  if (!t) return;
+  alert(`${t.title}\n\n${t.course_name || ""}\n${_hasDueDate(t) ? "Due " + fmtDate(t.due_date, t.source) : "No due date"}` +
+    (t.description ? "\n\n" + t.description.slice(0, 400) : ""));
 }
 async function syncAll(btn) {
   if (btn) { btn.disabled = true; btn.textContent = "Syncing..."; }
@@ -619,22 +734,102 @@ async function sendChat() {
   }
 }
 
-// ---------- ACCOUNT LOGIN ----------
+// ---------- SIGN IN / REGISTER (auth gate) ----------
+let _authMode = "login";
+function initLogin() {
+  initTheme();
+  const tabs = document.querySelectorAll("[data-auth-tab]");
+  tabs.forEach(btn => btn.onclick = () => setAuthMode(btn.dataset.authTab));
+  const form = document.getElementById("auth-form");
+  if (form) form.onsubmit = (e) => { e.preventDefault(); submitAuth(); };
+  setAuthMode("login");
+}
+function setAuthMode(mode) {
+  _authMode = mode === "register" ? "register" : "login";
+  document.querySelectorAll("[data-auth-tab]").forEach(b =>
+    b.classList.toggle("active", b.dataset.authTab === _authMode));
+  const nameRow = document.getElementById("auth-name-row");
+  if (nameRow) nameRow.style.display = _authMode === "register" ? "block" : "none";
+  const submit = document.getElementById("auth-submit");
+  if (submit) submit.textContent = _authMode === "register" ? "Create account" : "Sign in";
+  const status = document.getElementById("auth-status");
+  if (status) status.textContent = "";
+}
+async function submitAuth() {
+  const status = document.getElementById("auth-status");
+  const email = (document.getElementById("auth-email").value || "").trim();
+  const password = document.getElementById("auth-password").value || "";
+  const name = (document.getElementById("auth-name")?.value || "").trim();
+  if (!email || !password) { if (status) status.textContent = "Enter your email and password."; return; }
+  status.textContent = _authMode === "register" ? "Creating account…" : "Signing in…";
+  const url = _authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+  try {
+    const r = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, name }),
+    });
+    const data = await r.json();
+    if (!r.ok) { status.textContent = data.error || "Failed."; return; }
+    location.href = data.redirect || "/";
+  } catch (e) {
+    status.textContent = "Error: " + e;
+  }
+}
+
+// ---------- ACCOUNT (services + per-user credentials) ----------
 let _loginFields = [];
 let _adminFields = [];
 
-async function initLogin() {
-  renderSidebar("/login");
+function renderAccountStatus(a) {
+  const el = document.getElementById("account-status");
+  if (!el) return;
+  const row = (label, ok, extra) =>
+    `<div class="acct-status-row"><span class="status-name">${label}</span>` +
+    `<span>${ok ? '<span class="dot on">●</span> ' + (extra || "linked")
+                 : '<span class="dot off">○</span> ' + (extra || "not linked")}</span></div>`;
+  const gbtn = a.google_connected ? "Switch Google account" : "Connect Google";
+  el.innerHTML =
+    `<div class="acct-status-row"><span class="status-name">Google (Gmail + Classroom)</span>` +
+      `<span class="row-actions"><a class="btn" href="/auth/google">${gbtn}</a>` +
+      (a.google_connected ? `<button type="button" class="btn" onclick="disconnectGoogle()">Disconnect</button>` : "") +
+      `</span></div>` +
+    `<div class="muted acct-email">${a.email ? ("Signed in as " + esc(a.email)) : "Email/password account. Connect Google to pull Gmail + Classroom."}</div>` +
+    row("Veracross", a.veracross_linked, a.veracross_linked ? "linked" : "add below") +
+    row("Accelerate / Buzz", a.buzz_linked, a.buzz_linked ? "linked" : "optional") +
+    row("Phone (SMS / WhatsApp)", a.phone_linked, a.phone_linked ? "linked" : "optional");
+}
+
+function initAccountPassword() {
+  const btn = document.getElementById("password-save-btn");
+  if (!btn) return;
+  btn.onclick = async () => {
+    const status = document.getElementById("password-status");
+    const pw = document.getElementById("new-password").value || "";
+    if (pw.length < 8) { status.textContent = "Password must be at least 8 characters."; return; }
+    status.textContent = "Updating…";
+    try {
+      await postJSON("/api/auth/change-password", { new_password: pw });
+      status.textContent = "Password updated.";
+      document.getElementById("new-password").value = "";
+    } catch (e) {
+      status.textContent = "Error: " + e;
+    }
+  };
+}
+
+async function initAccount() {
+  renderSidebar("/account");
   const [data, account] = await Promise.all([
     getJSON("/api/settings"),
     getJSON("/api/account"),
   ]);
+  renderAccountStatus(account);
   _loginFields = data.fields || [];
   const form = document.getElementById("login-form");
   const groups = [
-    { title: "Quick setup — Google + Veracross", keys: ["VERACROSS_URL", "VERACROSS_USERNAME", "VERACROSS_PASSWORD"] },
-    { title: "Optional: SMS notifications", keys: ["USER_DISPLAY_NAME", "YOUR_PHONE_NUMBER", "PUBLIC_WEBHOOK_BASE"] },
-    { title: "Optional: Buzz / Accelerate", keys: ["BUZZ_DOMAIN", "BUZZ_USERNAME", "BUZZ_PASSWORD"] },
+    { title: "Veracross — grades & classes", keys: ["VERACROSS_URL", "VERACROSS_USERNAME", "VERACROSS_PASSWORD"] },
+    { title: "Phone — SMS / WhatsApp notifications", keys: ["USER_DISPLAY_NAME", "YOUR_PHONE_NUMBER"] },
+    { title: "Accelerate / Buzz", keys: ["BUZZ_DOMAIN", "BUZZ_USERNAME", "BUZZ_PASSWORD"] },
   ];
   form.innerHTML = groups.map(g => {
     const fields = _loginFields.filter(f => g.keys.includes(f.key));
@@ -669,10 +864,11 @@ async function initAdminCredentials() {
     const form = document.getElementById("admin-creds-form");
     if (!form) return;
     const groups = [
-      { title: "Twilio", keys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM", "TWILIO_WHATSAPP_FROM"] },
+      { title: "Twilio (SMS + WhatsApp)", keys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM", "TWILIO_WHATSAPP_FROM"] },
+      { title: "Public webhook (for inbound replies)", keys: ["PUBLIC_WEBHOOK_BASE"] },
       { title: "Cerebras AI", keys: ["CEREBRAS_API_KEY"] },
       { title: "Google OAuth app", keys: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REDIRECT_URI"] },
-      { title: "Optional messaging", keys: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] },
+      { title: "Optional: Telegram", keys: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] },
     ];
     form.innerHTML = groups.map(g => {
       const fields = _adminFields.filter(f => g.keys.includes(f.key));
@@ -733,7 +929,7 @@ async function saveLogin() {
     const r = await postJSON("/api/settings", { values });
     status.textContent = r.updated && r.updated.length
       ? "Saved: " + r.updated.join(", ") : "Nothing changed.";
-    await initLogin();
+    await initAccount();
   } catch (e) {
     status.textContent = "Error: " + e;
   }
@@ -918,6 +1114,12 @@ async function initNotifications() {
     if (el.type === "checkbox") el.checked = !!prefs[id];
     else el.value = prefs[id];
   });
+  const ch = document.getElementById("notification_channel");
+  if (ch) {
+    ch.value = prefs.notification_channel || "sms";
+    ch.onchange = updateChannelHint;
+    updateChannelHint();
+  }
   document.getElementById("notify-save").onclick = saveNotifications;
   document.getElementById("notify-test").onclick = testNotification;
 }

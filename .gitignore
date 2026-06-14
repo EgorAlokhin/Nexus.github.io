@@ -1,5 +1,7 @@
 credentials.env
 nexus.db
+nexus.db.bak-*
+*.bak
 .venv/
 .venv-django/
 __pycache__/

@@ -18,7 +18,7 @@
 
   <div class="account-hero">
     <div class="section-h">QUICK SETUP</div>
-    <p class="muted">1. Connect Google below. 2. Add Veracross credentials on <a href="/login">Your account</a>. Then Sync All.</p>
+    <p class="muted">1. Connect Google below. 2. Add Veracross credentials on <a href="/account">Account</a>. Then Sync All.</p>
   </div>
 
   <div class="section-h">CONNECTIONS</div>
@@ -91,11 +91,23 @@
   <div class="section-h">APPEARANCE</div>
   <div class="settings-row">
     <div class="row-head">
-      <div class="muted">Theme toggle is in the sidebar. Preference is saved locally.</div>
+      <div class="muted">
+        Light/Dark toggle is in the sidebar. Pick the overall look: <strong>Fresh</strong> is a lighter,
+        barely-rounded minimalist style; <strong>Classic</strong> is the original square design. Saved on this device.
+      </div>
+      <div class="row-actions">
+        <button type="button" id="skin-btn" onclick="toggleSkin()">Fresh look</button>
+      </div>
     </div>
   </div>
 </div>
-<script src="/static/app.js?v=13"></script>
-<script>initSettings();</script>
+<script src="/static/app.js?v=20"></script>
+<script>
+  initSettings();
+  (function () {
+    var b = document.getElementById("skin-btn");
+    if (b) b.textContent = (currentSkin() === "fresh") ? "Classic look" : "Fresh look";
+  })();
+</script>
 </body>
 </html>

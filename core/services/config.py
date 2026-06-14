@@ -5,15 +5,37 @@ from datetime import datetime, timezone
 from django.conf import settings
 
 from core.models import Setting, Task
+from core.services.context import get_current_account
 
 _UNSET = object()
 
 
 def cfg(key, default=None):
+    """Global / infrastructure config (Setting table then environment).
+
+    Use for shared keys (Twilio, Cerebras, Google OAuth client). For per-user
+    keys (Veracross/Buzz/phone) use user_cfg so credentials never leak between
+    accounts.
+    """
     row = Setting.objects.filter(key=key).first()
     if row and row.value:
         return row.value
     return os.getenv(key) or default
+
+
+def user_cfg(key, default=None, account=None):
+    """Per-user config read from the active Account (no global fallback)."""
+    account = account if account is not None else get_current_account()
+    if account is not None:
+        v = account.get(key)
+        if v not in (None, ""):
+            return v
+    return default
+
+
+def _current_user():
+    acct = get_current_account()
+    return acct.user if acct is not None else None
 
 
 def setting_get(key):
@@ -74,10 +96,13 @@ def upsert_task(
     course_name="",
     is_completed=_UNSET,
     created_at=_UNSET,
+    user=None,
 ):
+    if user is None:
+        user = _current_user()
     t = None
     if external_id:
-        t = Task.objects.filter(source=source, external_id=external_id).first()
+        t = Task.objects.filter(user=user, source=source, external_id=external_id).first()
     if t:
         if title:
             t.title = title
@@ -94,6 +119,7 @@ def upsert_task(
         t.save()
     else:
         kw = dict(
+            user=user,
             source=source,
             external_id=external_id,
             title=title or "(untitled)",

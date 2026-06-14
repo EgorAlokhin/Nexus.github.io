@@ -202,9 +202,9 @@ def _material_sort_key(item, sort):
     return item.get("posted_at") or item.get("created_at") or ""
 
 
-def materials_payload(course_id="", sort="date_desc"):
+def materials_payload(user, course_id="", sort="date_desc"):
     sort = sort if sort in ("date_desc", "date_asc", "title") else "date_desc"
-    base = Task.objects.only_classroom_materials().filter(due_date__isnull=True)
+    base = Task.objects.for_user(user).only_classroom_materials().filter(due_date__isnull=True)
 
     course_counts = Counter()
     course_names = {}
@@ -326,10 +326,10 @@ def match_books_for_material(title="", description="", course_name="", limit=3):
     return out
 
 
-def _course_workload():
+def _course_workload(user):
     """Count open tasks per course to infer where the student is busiest."""
     counts = Counter()
-    for t in Task.objects.for_worklist().filter(is_completed=False):
+    for t in Task.objects.for_user(user).for_worklist().filter(is_completed=False):
         name = (t.course_name or "").strip()
         if name:
             counts[name.lower()] += 1
@@ -356,8 +356,8 @@ def _match_score(book, workload):
     return score, matched_courses
 
 
-def library_payload():
-    workload = _course_workload()
+def library_payload(user):
+    workload = _course_workload(user)
     books = []
     for book in LIBRARY_BOOKS:
         score, matched = _match_score(book, workload)

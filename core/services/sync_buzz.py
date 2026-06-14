@@ -1,13 +1,14 @@
 import httpx
 
-from core.models import BUZZ_GRADABLE_TYPES, Task, UserSession
-from core.services.config import cfg, parse_due_datetime, upsert_task
+from core.models import BUZZ_GRADABLE_TYPES, Task
+from core.services.config import parse_due_datetime, upsert_task, user_cfg
+from core.services.context import get_current_account
 
 DLAP = "https://api.agilixbuzz.com/dlap.ashx"
 
 
 def _buzz_domain():
-    return cfg("BUZZ_DOMAIN", "") or ""
+    return user_cfg("BUZZ_DOMAIN", "") or ""
 
 
 def _userspace():
@@ -15,11 +16,13 @@ def _userspace():
     return domain.split(".")[0] if domain else ""
 
 
-def _session_row():
-    s = UserSession.objects.first()
-    if not s:
-        s = UserSession.objects.create()
-    return s
+def _account():
+    return get_current_account()
+
+
+def _user():
+    a = get_current_account()
+    return a.user if a else None
 
 
 def _as_list(node, *keys):
@@ -40,8 +43,8 @@ def _as_list(node, *keys):
 
 
 def buzz_login():
-    user = f"{_userspace()}/{cfg('BUZZ_USERNAME')}"
-    params = {"cmd": "login2", "username": user, "password": cfg("BUZZ_PASSWORD"), "_format": "json"}
+    user = f"{_userspace()}/{user_cfg('BUZZ_USERNAME')}"
+    params = {"cmd": "login2", "username": user, "password": user_cfg("BUZZ_PASSWORD"), "_format": "json"}
     try:
         with httpx.Client(timeout=30, follow_redirects=True) as c:
             data = c.get(DLAP, params=params).json()
@@ -53,16 +56,17 @@ def buzz_login():
     u = resp.get("user", {})
     token, uid = u.get("token"), u.get("userid")
     if token and uid:
-        s = _session_row()
-        s.buzz_token = f"{token}|{uid}"
-        s.save(update_fields=["buzz_token"])
+        account = _account()
+        if account:
+            account.set("buzz_token", f"{token}|{uid}", save=True)
     return token, uid
 
 
 def _token_uid():
-    s = _session_row()
-    if s.buzz_token and "|" in s.buzz_token:
-        return s.buzz_token.split("|", 1)
+    account = _account()
+    stored = account.buzz_token if account else ""
+    if stored and "|" in stored:
+        return stored.split("|", 1)
     return buzz_login()
 
 
@@ -242,7 +246,7 @@ def _is_buzz_gradable_item(item):
 
 def _purge_buzz_lessons():
     gradable = list(BUZZ_GRADABLE_TYPES)
-    Task.objects.filter(source="buzz").exclude(description__in=gradable).delete()
+    Task.objects.filter(user=_user(), source="buzz").exclude(description__in=gradable).delete()
 
 
 def sync_buzz():
@@ -322,7 +326,7 @@ def _mark_buzz_done_from_activity(enrollment_id, item_id):
     if not enrollment_id or not item_id:
         return
     ext = f"{enrollment_id}:{item_id}"
-    t = Task.objects.filter(source="buzz", external_id=ext).first()
+    t = Task.objects.filter(user=_user(), source="buzz", external_id=ext).first()
     if t:
         t.is_completed = True
         t.save(update_fields=["is_completed"])
@@ -381,7 +385,7 @@ def sync_buzz_activity(token=None, uid=None):
                 is_completed=False,
             )
             count += 1
-    for t in Task.objects.filter(source="activity"):
+    for t in Task.objects.filter(user=_user(), source="activity"):
         if t.external_id and t.external_id not in seen:
             t.delete()
     return count

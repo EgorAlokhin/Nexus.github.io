@@ -2,9 +2,9 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from core.models import Notification, Task
+from core.models import Account, Notification, Task
 from core.services.ai import apply_priorities, generate_digest
-from core.services.config import cfg
+from core.services.context import use_account
 from core.services.dates import normalize_due, utc_now
 from core.services.messaging import send_notification, user_phone
 from core.services.notification_prefs import get_notification_prefs
@@ -21,113 +21,120 @@ SYNCERS = {
     "veracross": sync_veracross,
     "news": sync_bhs_news,
 }
+# Keyed by (user_id, source) -> ISO timestamp of last successful run.
 LAST_SYNC = {}
 _scheduler = None
 
 
-def sync_source(source):
+def _mark(account, source):
+    uid = account.user_id if account else None
+    LAST_SYNC[(uid, source)] = timezone.now().isoformat()
+
+
+def sync_source(source, account=None):
     fn = SYNCERS.get(source)
     if not fn:
         return {"count": 0, "error": "unknown source"}
-    try:
-        n = fn()
-        LAST_SYNC[source] = timezone.now().isoformat()
-        apply_priorities()
-        return {"count": n, "error": None}
-    except Exception as exc:
-        LAST_SYNC[source] = timezone.now().isoformat()
-        return {"count": 0, "error": str(exc)[:300]}
-
-
-def sync_all():
-    summary = {}
-    for source, fn in SYNCERS.items():
+    with use_account(account):
         try:
             n = fn()
-            summary[source] = {"count": n, "error": None}
+            _mark(account, source)
+            apply_priorities()
+            return {"count": n, "error": None}
         except Exception as exc:
-            summary[source] = {"count": 0, "error": str(exc)[:200]}
-        LAST_SYNC[source] = timezone.now().isoformat()
-    try:
-        apply_priorities()
-    except Exception:
-        pass
+            _mark(account, source)
+            return {"count": 0, "error": str(exc)[:300]}
+
+
+def sync_all(account=None):
+    summary = {}
+    with use_account(account):
+        for source, fn in SYNCERS.items():
+            try:
+                summary[source] = {"count": fn(), "error": None}
+            except Exception as exc:
+                summary[source] = {"count": 0, "error": str(exc)[:200]}
+            _mark(account, source)
+        try:
+            apply_priorities()
+        except Exception:
+            pass
     return summary
 
 
+# ---------------------------------------------------------------------------
+# Background jobs — global timers that fan out to every account
+# ---------------------------------------------------------------------------
+
+def _each_account():
+    return list(Account.objects.select_related("user").all())
+
+
 def _daily_digest():
-    prefs = get_notification_prefs()
-    if not prefs.get("daily_digest_enabled", True):
-        return
-    sync_all()
-    tasks = list(Task.objects.for_worklist().filter(is_completed=False))
-    digest = generate_digest(tasks)
-    if digest:
-        send_notification(user_phone(), digest)
+    now = timezone.localtime() if timezone.is_aware(timezone.now()) else timezone.now()
+    for account in _each_account():
+        with use_account(account):
+            prefs = get_notification_prefs(account)
+            if not prefs.get("daily_digest_enabled", True):
+                continue
+            if int(prefs.get("daily_digest_hour", 7)) != now.hour:
+                continue
+            sync_all(account)
+            tasks = list(Task.objects.for_user(account.user).for_worklist().filter(is_completed=False))
+            digest = generate_digest(tasks)
+            if digest:
+                send_notification(account, digest)
 
 
 def _background_refresh():
-    prefs = get_notification_prefs()
-    if not prefs.get("background_sync_enabled", True):
-        return
-    sync_all()
+    for account in _each_account():
+        prefs = get_notification_prefs(account)
+        if not prefs.get("background_sync_enabled", True):
+            continue
+        sync_all(account)
 
 
 def _reminders():
-    prefs = get_notification_prefs()
-    if not prefs.get("reminders_enabled", True):
-        return
-    hours_before = int(prefs.get("reminder_hours_before", 2))
     now = utc_now()
-    window_end = now + timedelta(hours=hours_before)
-    tasks = Task.objects.for_worklist().filter(is_completed=False, due_date__isnull=False)
-    for t in tasks:
-        due = normalize_due(t.due_date)
-        if not due or due < now or due > window_end:
-            continue
-        if Notification.objects.filter(task=t).exists():
-            continue
-        msg = (
-            f"NEXUS reminder: '{t.title}' ({t.course_name or t.source}) is due "
-            f"{due.strftime('%b %d %H:%M')}."
-        )
-        ch = (cfg("NOTIFICATION_CHANNEL") or "sms").lower()
-        Notification.objects.create(task=t, channel=ch, message=msg)
-        send_notification(user_phone(), msg)
+    for account in _each_account():
+        with use_account(account):
+            prefs = get_notification_prefs(account)
+            if not prefs.get("reminders_enabled", True):
+                continue
+            hours_before = int(prefs.get("reminder_hours_before", 2))
+            window_end = now + timedelta(hours=hours_before)
+            tasks = Task.objects.for_user(account.user).for_worklist().filter(
+                is_completed=False, due_date__isnull=False
+            )
+            for t in tasks:
+                due = normalize_due(t.due_date)
+                if not due or due < now or due > window_end:
+                    continue
+                if Notification.objects.filter(user=account.user, task=t).exists():
+                    continue
+                msg = (
+                    f"NEXUS reminder: '{t.title}' ({t.course_name or t.source}) is due "
+                    f"{due.strftime('%b %d %H:%M')}."
+                )
+                Notification.objects.create(
+                    user=account.user, task=t, channel=prefs.get("notification_channel", "sms"), message=msg
+                )
+                send_notification(account, msg)
 
 
 def reschedule_jobs():
     global _scheduler
     if not _scheduler:
         return
-    prefs = get_notification_prefs()
     for job_id in ("daily_digest", "refresh", "reminders"):
         try:
             _scheduler.remove_job(job_id)
         except Exception:
             pass
-    if prefs.get("daily_digest_enabled", True):
-        _scheduler.add_job(
-            _daily_digest,
-            "cron",
-            hour=int(prefs.get("daily_digest_hour", 7)),
-            minute=int(prefs.get("daily_digest_minute", 0)),
-            id="daily_digest",
-        )
-    if prefs.get("background_sync_enabled", True):
-        _scheduler.add_job(
-            _background_refresh,
-            "interval",
-            hours=int(prefs.get("background_sync_hours", 6)),
-            id="refresh",
-        )
-    if prefs.get("reminders_enabled", True):
-        _scheduler.add_job(
-            _reminders,
-            "interval",
-            minutes=int(prefs.get("reminder_check_minutes", 30)),
-            id="reminders",
-        )
+    # Fixed-cadence global jobs; per-user prefs are honoured inside each job.
+    _scheduler.add_job(_daily_digest, "cron", minute=1, id="daily_digest")
+    _scheduler.add_job(_background_refresh, "interval", hours=6, id="refresh")
+    _scheduler.add_job(_reminders, "interval", minutes=30, id="reminders")
 
 
 def start_scheduler():

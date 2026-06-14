@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Account</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', localStorage.getItem('nexus-skin') || 'fresh');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / ACCOUNT</div>
+  </div>
+
+  <div class="section-h">CONNECTED SERVICES</div>
+  <div id="account-status" class="account-hero"></div>
+
+  <div class="section-h">YOUR CREDENTIALS</div>
+  <p class="muted">Stored encrypted, used only for your account. Leave a saved password blank to keep it.</p>
+  <div id="login-status" class="login-status muted"></div>
+  <form id="login-form" class="cred-form"></form>
+
+  <div class="login-actions">
+    <button type="button" class="btn" id="save-btn">Save</button>
+    <button type="button" class="btn" id="test-btn">Test Veracross / Buzz login</button>
+  </div>
+
+  <details class="admin-creds account-password">
+    <summary class="muted">Change password</summary>
+    <label class="cred-field"><span>New password (min 8 chars)</span>
+      <input id="new-password" type="password" autocomplete="new-password"></label>
+    <div class="login-actions">
+      <button type="button" class="btn" id="password-save-btn">Update password</button>
+    </div>
+    <div id="password-status" class="login-status muted"></div>
+  </details>
+
+  <div id="admin-creds-section" class="admin-creds-panel" style="display:none">
+    <div class="section-h">ADMIN — SHARED SERVER CREDENTIALS</div>
+    <p class="muted" id="admin-creds-note">Twilio, Cerebras, Google OAuth app and webhook (admin only).</p>
+    <div id="admin-creds-status" class="login-status muted"></div>
+    <form id="admin-creds-form" class="cred-form"></form>
+    <div class="login-actions">
+      <button type="button" class="btn" id="admin-save-btn">Save admin credentials</button>
+    </div>
+  </div>
+</div>
+<script src="/static/app.js?v=20"></script>
+<script>initAccount(); initAccountPassword();</script>
+</body>
+</html>

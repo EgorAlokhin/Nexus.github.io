@@ -143,9 +143,13 @@ def _handed_in(service, course_id, course_work_id, submissions_by_work):
 
 
 def sync_classroom():
+    from core.services.context import get_current_account
+
     creds = get_google_credentials()
     if not creds:
         return 0
+    account = get_current_account()
+    owner = account.user if account else None
     service = build("classroom", "v1", credentials=creds, cache_discovery=False)
     courses = _list_courses(service)
     count = 0
@@ -212,7 +216,7 @@ def sync_classroom():
             )
             count += 1
 
-    for t in Task.objects.filter(source="classroom"):
+    for t in Task.objects.filter(user=owner, source="classroom"):
         if t.external_id and t.external_id not in seen_ids:
             t.delete()
     return count

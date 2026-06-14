@@ -159,8 +159,15 @@ def prioritize_tasks(tasks):
     return out
 
 
-def apply_priorities():
+def apply_priorities(user=None):
+    if user is None:
+        from core.services.context import get_current_account
+
+        acct = get_current_account()
+        user = acct.user if acct else None
     tasks = Task.objects.for_worklist().filter(is_completed=False)
+    if user is not None:
+        tasks = tasks.filter(user=user)
     try:
         scores = dict(prioritize_tasks(list(tasks)))
     except Exception:
@@ -272,7 +279,7 @@ def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_
         return f"Error contacting math tutor: {e}", model, tier_key
 
 
-def handle_chat(message, history, file=None):
+def handle_chat(message, history, file=None, user=None):
     try:
         hist = json.loads(history) if history else []
     except json.JSONDecodeError:
@@ -288,13 +295,17 @@ def handle_chat(message, history, file=None):
     if not (message or "").strip() and not attachment_kind:
         return {"response": "Enter a message or attach a file.", "model": None, "tier": None}
 
-    tasks = list(Task.objects.for_worklist().filter(is_completed=False))
+    task_q = Task.objects.for_worklist().filter(is_completed=False)
+    if user is not None and getattr(user, "is_authenticated", False):
+        task_q = task_q.filter(user=user)
+    tasks = list(task_q)
     if _is_math(message) or (attachment_kind and "math" in (message or "").lower()):
         reply, model, tier_key = math_tutor(message, attachment_kind, attachment_data, attachment_media)
     else:
         reply, model, tier_key = chat_reply(message, tasks, hist, attachment_kind, attachment_data, attachment_media)
 
     user_line = message or f"[attachment: {file.name if file else 'file'}]"
-    ChatMessage.objects.create(role="user", content=user_line)
-    ChatMessage.objects.create(role="assistant", content=reply)
+    owner = user if (user is not None and getattr(user, "is_authenticated", False)) else None
+    ChatMessage.objects.create(user=owner, role="user", content=user_line)
+    ChatMessage.objects.create(user=owner, role="assistant", content=reply)
     return {"response": reply, "model": model, "tier": tier_label(model, tier_key)}

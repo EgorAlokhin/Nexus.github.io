@@ -1,9 +1,40 @@
-from datetime import datetime
+import json
 
+from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import Q
+from django.utils.timezone import now as tz_now
+
+from core.services.crypto import decrypt, encrypt
 
 BUZZ_GRADABLE_TYPES = frozenset({"Assessment", "Assignment", "Discussion", "Journal"})
+
+# Per-user settings that must be stored encrypted at rest.
+SECRET_USER_KEYS = frozenset({
+    "VERACROSS_PASSWORD",
+    "BUZZ_PASSWORD",
+    "google_refresh_token",
+    "buzz_token",
+    "veracross_cookies",
+})
+
+# Per-user (non-secret) settings kept in plain JSON on the Account.
+PLAIN_USER_KEYS = frozenset({
+    "USER_DISPLAY_NAME",
+    "YOUR_PHONE_NUMBER",
+    "VERACROSS_URL",
+    "VERACROSS_USERNAME",
+    "BUZZ_DOMAIN",
+    "BUZZ_USERNAME",
+    "NOTIFICATION_PREFS",
+    "NOTIFICATION_CHANNEL",
+})
+
+USER_SETTING_KEYS = SECRET_USER_KEYS | PLAIN_USER_KEYS
+
+
+def _digits(value) -> str:
+    return "".join(c for c in str(value or "") if c.isdigit())
 
 
 def is_announcement_task(task) -> bool:
@@ -28,6 +59,11 @@ def is_buzz_lesson_task(task) -> bool:
 
 
 class TaskQuerySet(models.QuerySet):
+    def for_user(self, user):
+        if user is None or not getattr(user, "is_authenticated", False):
+            return self.none()
+        return self.filter(user=user)
+
     def exclude_announcements(self):
         return self.exclude(
             Q(external_id__contains=":ann:") | Q(title__startswith="Announcement:")
@@ -59,6 +95,7 @@ class TaskQuerySet(models.QuerySet):
 
 
 class Task(models.Model):
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="tasks")
     title = models.CharField(max_length=512)
     description = models.TextField(blank=True, default="")
     due_date = models.DateTimeField(null=True, blank=True)
@@ -67,14 +104,17 @@ class Task(models.Model):
     course_name = models.CharField(max_length=256, blank=True, default="")
     priority_score = models.IntegerField(default=5)
     is_completed = models.BooleanField(default=False)
-    created_at = models.DateTimeField(default=datetime.utcnow)
+    created_at = models.DateTimeField(default=tz_now)
 
     objects = TaskQuerySet.as_manager()
 
     class Meta:
         db_table = "tasks"
         constraints = [
-            models.UniqueConstraint(fields=["source", "external_id"], name="uq_source_extid"),
+            models.UniqueConstraint(fields=["user", "source", "external_id"], name="uq_user_source_extid"),
+        ]
+        indexes = [
+            models.Index(fields=["user", "source"]),
         ]
 
     def _due_date_iso(self):
@@ -102,6 +142,7 @@ class Task(models.Model):
 
 
 class Grade(models.Model):
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="grades")
     source = models.CharField(max_length=32, default="buzz")
     external_id = models.CharField(max_length=256)
     enrollment_id = models.CharField(max_length=64, blank=True, default="")
@@ -112,12 +153,12 @@ class Grade(models.Model):
     possible = models.CharField(max_length=64, blank=True, default="")
     letter = models.CharField(max_length=16, blank=True, default="")
     scored_at = models.DateTimeField(null=True, blank=True)
-    synced_at = models.DateTimeField(default=datetime.utcnow)
+    synced_at = models.DateTimeField(default=tz_now)
 
     class Meta:
         db_table = "grades"
         constraints = [
-            models.UniqueConstraint(fields=["source", "external_id"], name="uq_grade_source_extid"),
+            models.UniqueConstraint(fields=["user", "source", "external_id"], name="uq_grade_user_source_extid"),
         ]
 
     def _score_display(self):
@@ -144,8 +185,9 @@ class Grade(models.Model):
 
 
 class Notification(models.Model):
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="notifications")
     task = models.ForeignKey(Task, null=True, blank=True, on_delete=models.SET_NULL, related_name="notifications")
-    sent_at = models.DateTimeField(default=datetime.utcnow)
+    sent_at = models.DateTimeField(default=tz_now)
     channel = models.CharField(max_length=32, default="sms")
     message = models.TextField(blank=True, default="")
 
@@ -154,6 +196,8 @@ class Notification(models.Model):
 
 
 class UserSession(models.Model):
+    """Legacy single-user credential row. Superseded by Account; kept so the
+    data migration can copy the original deployment's credentials forward."""
     google_email = models.CharField(max_length=256, null=True, blank=True)
     google_refresh_token = models.TextField(null=True, blank=True)
     buzz_token = models.TextField(null=True, blank=True)
@@ -164,10 +208,111 @@ class UserSession(models.Model):
         db_table = "user_sessions"
 
 
+class Account(models.Model):
+    """Per-user credential vault and settings.
+
+    Secrets (OAuth refresh token, Buzz token, Veracross cookies, service
+    passwords) live in `secrets_enc` (Fernet-encrypted JSON). Non-secret
+    settings live in `data_json`. `phone` is mirrored in plaintext so incoming
+    SMS/WhatsApp can be routed to the right user by number.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="account")
+    google_email = models.CharField(max_length=256, blank=True, default="", db_index=True)
+    phone = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    data_json = models.TextField(blank=True, default="")
+    secrets_enc = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(default=tz_now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "accounts"
+
+    # ---- internal JSON helpers ----
+    def _data(self) -> dict:
+        if not self.data_json:
+            return {}
+        try:
+            d = json.loads(self.data_json)
+            return d if isinstance(d, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    def _secrets(self) -> dict:
+        if not self.secrets_enc:
+            return {}
+        raw = decrypt(self.secrets_enc)
+        if not raw:
+            return {}
+        try:
+            d = json.loads(raw)
+            return d if isinstance(d, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    # ---- public get/set ----
+    def get(self, key, default=None):
+        data = self._data()
+        if key in data and data[key] not in (None, ""):
+            return data[key]
+        secrets = self._secrets()
+        v = secrets.get(key)
+        return v if v not in (None, "") else default
+
+    def set(self, key, value, *, save=False):
+        if key in SECRET_USER_KEYS:
+            secrets = self._secrets()
+            if value in (None, ""):
+                secrets.pop(key, None)
+            else:
+                secrets[key] = value
+            self.secrets_enc = encrypt(json.dumps(secrets))
+        else:
+            data = self._data()
+            if value in (None, ""):
+                data.pop(key, None)
+            else:
+                data[key] = value
+            self.data_json = json.dumps(data)
+            if key == "YOUR_PHONE_NUMBER":
+                self.phone = _digits(value)
+        if save:
+            self.save(update_fields=["data_json", "secrets_enc", "phone", "updated_at"])
+        return self
+
+    def set_many(self, mapping: dict, *, save=True):
+        for k, v in (mapping or {}).items():
+            self.set(k, v)
+        if save:
+            self.save()
+        return self
+
+    # ---- convenience accessors for credential tokens ----
+    @property
+    def google_refresh_token(self):
+        return self.get("google_refresh_token") or ""
+
+    @property
+    def buzz_token(self):
+        return self.get("buzz_token") or ""
+
+    @property
+    def veracross_cookies(self):
+        return self.get("veracross_cookies") or ""
+
+    @property
+    def phone_digits(self):
+        return _digits(self.phone or self.get("YOUR_PHONE_NUMBER"))
+
+    def __str__(self):
+        return f"Account<{self.user_id}:{self.google_email or self.user.username}>"
+
+
 class ChatMessage(models.Model):
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="chat_messages")
     role = models.CharField(max_length=16)
     content = models.TextField()
-    timestamp = models.DateTimeField(default=datetime.utcnow)
+    timestamp = models.DateTimeField(default=tz_now)
 
     class Meta:
         db_table = "chat_messages"

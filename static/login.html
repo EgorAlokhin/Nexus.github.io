@@ -3,51 +3,46 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nexus / Your account</title>
-<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<title>Nexus / Sign in</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', localStorage.getItem('nexus-skin') || 'fresh');</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-<div class="sidebar" id="sidebar"></div>
-<div class="main">
-  <div class="topbar">
-    <div class="breadcrumb">NEXUS / YOUR ACCOUNT</div>
-  </div>
+<body class="auth-body">
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">NEXUS</div>
+    <p class="auth-sub muted">Your classes, grades, deadlines and reminders in one place.</p>
 
-  <div class="account-hero">
-    <div class="section-h">GET STARTED IN TWO STEPS</div>
-    <ol class="setup-list">
-      <li><a href="/settings">Connect Google</a> on Settings (Gmail + Classroom).</li>
-      <li>Enter your <strong>Veracross</strong> portal URL, username, and password below — then Save.</li>
-    </ol>
-    <p class="muted">Buzz and SMS are optional. Admin users can configure Cerebras AI and Twilio after signing in with Google.</p>
-  </div>
-
-  <div id="login-status" class="login-status muted"></div>
-  <form id="login-form" class="cred-form"></form>
-
-  <div id="admin-creds-section" class="admin-creds-panel" style="display:none">
-    <div class="section-h">ADMIN CREDENTIALS</div>
-    <p class="muted" id="admin-creds-note">Twilio, Cerebras, and Google OAuth app settings (admin only).</p>
-    <div id="admin-creds-status" class="login-status muted"></div>
-    <form id="admin-creds-form" class="cred-form"></form>
-    <div class="login-actions">
-      <button type="button" class="btn" id="admin-save-btn">Save admin credentials</button>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-auth-tab="login">Sign in</button>
+      <button type="button" class="auth-tab" data-auth-tab="register">Create account</button>
     </div>
-  </div>
 
-  <div class="login-actions">
-    <button type="button" class="btn" id="save-btn">Save account</button>
-    <a class="btn" href="/notifications">SMS setup (admin)</a>
-    <a class="btn" href="/settings">Connections</a>
-  </div>
+    <form id="auth-form" class="auth-form" autocomplete="on">
+      <div id="auth-name-row" class="cred-field" style="display:none">
+        <span>First name</span>
+        <input id="auth-name" type="text" autocomplete="given-name" placeholder="optional">
+      </div>
+      <label class="cred-field"><span>Email</span>
+        <input id="auth-email" type="email" autocomplete="email" required></label>
+      <label class="cred-field"><span>Password</span>
+        <input id="auth-password" type="password" autocomplete="current-password" required minlength="8"></label>
+      <button type="submit" class="btn auth-primary" id="auth-submit">Sign in</button>
+    </form>
 
-  <details class="admin-creds">
-    <summary class="muted">School services (Buzz, Google, Veracross) — expand if needed</summary>
-    <p class="muted">Buzz / Google / Veracross credentials appear in the form above after you expand.</p>
-  </details>
+    <div id="auth-status" class="login-status muted"></div>
+
+    <div class="auth-divider"><span>or</span></div>
+    <a class="btn auth-google" href="/auth/google">Continue with Google</a>
+
+    <p class="auth-note muted">
+      Connect Veracross, Accelerate, and your phone later from your Account — all optional.
+      Each person gets their own private account.
+    </p>
+  </div>
 </div>
-<script src="/static/app.js?v=5"></script>
+<script src="/static/app.js?v=20"></script>
 <script>initLogin();</script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 import json
 
-from core.services.config import cfg, setting_set
+from core.services.context import get_current_account
 
 DEFAULT_PREFS = {
     "notification_channel": "sms",
@@ -16,22 +16,25 @@ DEFAULT_PREFS = {
 }
 
 
-def get_notification_prefs():
+def get_notification_prefs(account=None):
+    account = account if account is not None else get_current_account()
     merged = DEFAULT_PREFS.copy()
-    raw = cfg("NOTIFICATION_PREFS")
-    if raw:
-        try:
-            merged.update(json.loads(raw))
-        except (json.JSONDecodeError, TypeError):
-            pass
-    env_ch = cfg("NOTIFICATION_CHANNEL")
-    if env_ch and "notification_channel" not in (raw or ""):
-        merged["notification_channel"] = env_ch
+    if account is not None:
+        raw = account.get("NOTIFICATION_PREFS")
+        if raw:
+            try:
+                merged.update(json.loads(raw))
+            except (json.JSONDecodeError, TypeError):
+                pass
     return merged
 
 
-def save_notification_prefs(prefs: dict) -> dict:
+def save_notification_prefs(prefs: dict, account=None) -> dict:
+    account = account if account is not None else get_current_account()
     merged = DEFAULT_PREFS.copy()
-    merged.update(prefs)
-    setting_set("NOTIFICATION_PREFS", json.dumps(merged))
+    merged.update(prefs or {})
+    if account is not None:
+        account.set("NOTIFICATION_PREFS", json.dumps(merged))
+        account.set("NOTIFICATION_CHANNEL", merged.get("notification_channel", "sms"))
+        account.save()
     return merged

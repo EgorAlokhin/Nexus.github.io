@@ -18,12 +18,22 @@
   <div id="notify-status" class="login-status muted"></div>
 
   <form id="notify-form" class="cred-form">
-    <input type="hidden" id="notification_channel" value="sms">
+    <div class="cred-group">
+      <div class="section-h">CHANNEL</div>
+      <label class="cred-field"><span>Send my reminders &amp; digests via</span>
+        <select id="notification_channel">
+          <option value="sms">SMS</option>
+          <option value="whatsapp">WhatsApp</option>
+          <option value="telegram">Telegram</option>
+        </select>
+      </label>
+      <div class="muted channel-hint" id="channel-hint"></div>
+    </div>
 
     <div class="cred-group">
       <div class="section-h">CHATBOT</div>
       <label class="cred-check"><input type="checkbox" id="chatbot_enabled" checked>
-        When I text the Twilio number, reply with the AI assistant (same as web Chat)</label>
+        When I text the number, reply with the AI assistant (same as web Chat)</label>
     </div>
 
     <div class="cred-group">
@@ -44,10 +54,10 @@
   <div class="login-actions">
     <button type="button" class="btn" id="notify-save">Save</button>
     <button type="button" class="btn" id="notify-test">Send test SMS</button>
-    <a class="btn" href="/login">Your account</a>
+    <a class="btn" href="/account">Account</a>
   </div>
 </div>
-<script src="/static/app.js?v=4"></script>
+<script src="/static/app.js?v=20"></script>
 <script>initNotifications();</script>
 </body>
 </html>

@@ -48,9 +48,13 @@ def _extract_body(payload):
 
 
 def sync_bhs_news():
+    from core.services.context import get_current_account
+
     creds = get_google_credentials()
     if not creds:
         return 0
+    account = get_current_account()
+    owner = account.user if account else None
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
     try:
         resp = service.users().messages().list(userId="me", q=BHS_NEWS_QUERY, maxResults=40).execute()
@@ -84,7 +88,7 @@ def sync_bhs_news():
         )
         count += 1
 
-    for t in Task.objects.filter(source="news"):
+    for t in Task.objects.filter(user=owner, source="news"):
         if t.external_id and t.external_id.replace("news:", "") not in seen:
             t.delete()
     return count

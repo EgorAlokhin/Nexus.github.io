@@ -25,7 +25,9 @@
   --accent: #f1f5f9;
 }
 
-* { box-sizing: border-box; border-radius: 0 !important; }
+* { box-sizing: border-box; }
+/* Classic skin = perfectly square. Fresh skin keeps barely-rounded corners. */
+[data-skin="classic"] * { border-radius: 0 !important; }
 
 html, body {
   margin: 0;
@@ -362,3 +364,204 @@ select { border: 1px solid var(--border); background: var(--bg); color: var(--te
 .material-book-link { border: 1px solid var(--border); padding: 10px 12px; background: var(--bg-secondary); font-size: 13px; line-height: 1.4; }
 .material-book-link strong { display: block; margin-bottom: 2px; }
 .material-no-books { font-size: 13px; }
+
+/* ===================================================================
+   SIDEBAR FOOTER (account + sign out)
+   =================================================================== */
+.sidebar-footer { margin-top: auto; padding: 12px 16px 0; border-top: 1px solid var(--border); }
+.acct-line {
+  font-size: 11px; color: var(--text-secondary); font-family: monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 8px;
+}
+.sidebar-controls { display: flex; gap: 8px; }
+.sidebar-controls button, .sidebar-controls .btn { flex: 1; text-align: center; padding: 6px 8px; font-size: 11px; }
+
+/* ===================================================================
+   MOBILE NAV CHROME (hamburger + backdrop) — hidden on desktop
+   =================================================================== */
+.nav-toggle { display: none; }
+.nav-backdrop { display: none; }
+.nav-toggle {
+  position: fixed; top: 10px; left: 10px; z-index: 60;
+  width: 40px; height: 36px; padding: 8px 9px; gap: 4px;
+  flex-direction: column; justify-content: center; align-items: stretch;
+  background: var(--bg); border: 1px solid var(--border); cursor: pointer;
+}
+.nav-toggle span { display: block; height: 2px; background: var(--text); }
+
+/* ===================================================================
+   DASHBOARD — CLASSES
+   =================================================================== */
+.courses-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px; margin-bottom: 24px;
+}
+.course-card { border: 1px solid var(--border); background: var(--surface); }
+.course-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px; cursor: pointer; list-style: none; font-weight: 600;
+}
+.course-head::-webkit-details-marker { display: none; }
+.course-head::before {
+  content: "+"; font-family: monospace; color: var(--text-secondary); margin-right: 2px;
+}
+.course-card[open] .course-head::before { content: "–"; }
+.course-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.course-head-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.course-grade {
+  font-family: monospace; font-size: 13px; font-weight: 700;
+  border: 1px solid var(--border); padding: 2px 8px;
+}
+.course-grade.grade-a { color: var(--priority-low); border-color: var(--priority-low); }
+.course-grade.grade-b { color: var(--buzz); border-color: var(--buzz); }
+.course-grade.grade-c { color: var(--priority-medium); border-color: var(--priority-medium); }
+.course-grade.grade-d { color: var(--priority-high); border-color: var(--priority-high); }
+.course-open { font-size: 11px; color: var(--text-secondary); font-family: monospace; white-space: nowrap; }
+.course-body { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.course-meta { font-size: 11px; margin: 10px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.src-pill {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  border: 1px solid currentColor; padding: 1px 6px; opacity: 0.9;
+}
+.course-tasks { display: flex; flex-direction: column; }
+.course-task {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center;
+  padding: 7px 0; border-top: 1px solid var(--border); font-size: 12px; cursor: pointer;
+}
+.course-task:first-child { border-top: none; }
+.ct-src { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.ct-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct-due { font-family: monospace; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+.course-empty { padding: 8px 0; }
+
+/* ===================================================================
+   ACCOUNT — connected services
+   =================================================================== */
+.acct-status-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.acct-status-row:last-child { border-bottom: none; }
+.acct-email { margin: 8px 0; }
+.account-password { margin: 16px 0; max-width: 520px; }
+.account-password .cred-field { margin-top: 10px; }
+
+/* ===================================================================
+   AUTH PAGE (sign in / register)
+   =================================================================== */
+.auth-body { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+.auth-wrap { width: 100%; padding: 24px; display: flex; justify-content: center; }
+.auth-card { width: 100%; max-width: 380px; border: 1px solid var(--border); padding: 28px 24px; background: var(--surface); }
+.auth-brand { font-weight: 700; letter-spacing: 4px; font-size: 24px; text-align: center; }
+.auth-sub { text-align: center; margin: 8px 0 20px; line-height: 1.4; }
+.auth-tabs { display: flex; margin-bottom: 18px; border: 1px solid var(--border); }
+.auth-tab {
+  flex: 1; border: none; border-right: 1px solid var(--border); background: var(--bg);
+  padding: 9px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; cursor: pointer;
+}
+.auth-tab:last-child { border-right: none; }
+.auth-tab.active { background: var(--text); color: var(--bg); }
+.auth-form { display: flex; flex-direction: column; gap: 12px; }
+.auth-form .cred-field { margin-bottom: 0; }
+.auth-primary { width: 100%; padding: 10px; margin-top: 4px; }
+.auth-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; color: var(--text-secondary); font-size: 12px; }
+.auth-divider::before, .auth-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.auth-google { display: block; width: 100%; text-align: center; padding: 10px; }
+.auth-note { margin-top: 18px; line-height: 1.5; text-align: center; }
+
+/* ===================================================================
+   STYLING FIXES — collapsed panels actually collapse
+   =================================================================== */
+.cal-detail-strip:empty { min-height: 0; padding: 0; }
+.cal-detail-bottom:has(#detail-body:empty) { padding-bottom: 8px; }
+details > summary { cursor: pointer; }
+
+/* ===================================================================
+   MOBILE / RESPONSIVE
+   =================================================================== */
+@media (max-width: 820px) {
+  .nav-toggle { display: flex; }
+  .sidebar {
+    transform: translateX(-100%); transition: transform 0.22s ease;
+    width: 240px; z-index: 55; box-shadow: 2px 0 18px rgba(0,0,0,0.18);
+  }
+  body.nav-open .sidebar { transform: none; }
+  body.nav-open .nav-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,0.4);
+  }
+  .main { margin-left: 0; padding: 16px; padding-top: 56px; }
+  .topbar { flex-wrap: wrap; gap: 8px; }
+  .status-row { grid-template-columns: repeat(2, 1fr); }
+  .status-cell + .status-cell { border-left: 1px solid var(--border); }
+  .cards { grid-template-columns: 1fr 1fr; }
+  .courses-grid { grid-template-columns: 1fr; }
+  .chat-layout { flex-direction: column; height: auto; }
+  .chat-main { height: 64vh; }
+  .chat-side { width: 100%; }
+  .filters { flex-wrap: wrap; }
+  .cal-grid { font-size: 11px; }
+  .cal-cell { min-height: 64px; }
+  .cal-task { font-size: 10px; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+@media (max-width: 460px) {
+  .status-row { grid-template-columns: 1fr; }
+  .cards { grid-template-columns: 1fr; }
+  .auth-card { padding: 22px 16px; }
+}
+
+/* ===================================================================
+   FRESH SKIN — minimalist, barely-rounded, calmer palette (toggleable)
+   =================================================================== */
+[data-skin="fresh"] {
+  --bg: #ffffff;
+  --bg-secondary: #f5f6f8;
+  --surface: #ffffff;
+  --border: #e2e5ea;
+  --text: #161a20;
+  --text-secondary: #69707c;
+  --accent: #3b5bdb;
+}
+[data-skin="fresh"][data-theme="dark"] {
+  --bg: #0f1216;
+  --bg-secondary: #171b21;
+  --surface: #161a20;
+  --border: #2a2f38;
+  --text: #e8eaed;
+  --text-secondary: #97a0ad;
+  --accent: #7aa2ff;
+}
+[data-skin="fresh"] body, [data-skin="fresh"] html { font-size: 14px; }
+[data-skin="fresh"] .card,
+[data-skin="fresh"] .course-card,
+[data-skin="fresh"] .status-cell,
+[data-skin="fresh"] .settings-row,
+[data-skin="fresh"] .account-hero,
+[data-skin="fresh"] .auth-card,
+[data-skin="fresh"] .library-card,
+[data-skin="fresh"] .material-card,
+[data-skin="fresh"] .announcement-card,
+[data-skin="fresh"] .badge,
+[data-skin="fresh"] .course-grade,
+[data-skin="fresh"] .src-pill,
+[data-skin="fresh"] button,
+[data-skin="fresh"] .btn,
+[data-skin="fresh"] select,
+[data-skin="fresh"] input[type=text],
+[data-skin="fresh"] input[type=password],
+[data-skin="fresh"] input[type=email],
+[data-skin="fresh"] input[type=number],
+[data-skin="fresh"] .auth-tabs,
+[data-skin="fresh"] .nav-toggle { border-radius: 4px; }
+[data-skin="fresh"] .cards .card,
+[data-skin="fresh"] .course-card { transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+[data-skin="fresh"] .course-card:hover,
+[data-skin="fresh"] .card:hover { border-color: var(--accent); }
+[data-skin="fresh"] .sidebar nav a.active { border-left-color: var(--accent); color: var(--accent); }
+[data-skin="fresh"] button:hover, [data-skin="fresh"] .btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+[data-skin="fresh"] .auth-tab.active { background: var(--accent); color: #fff; }
+[data-skin="fresh"] .dot.on { color: #16a34a; }
+[data-skin="fresh"] .status-row { gap: 8px; }
+[data-skin="fresh"] .status-cell { border: 1px solid var(--border); }
+[data-skin="fresh"] .status-cell + .status-cell { border-left: 1px solid var(--border); }
+[data-skin="fresh"] .brand { color: var(--accent); }
