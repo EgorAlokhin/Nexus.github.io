@@ -827,7 +827,8 @@ async function syncOne(src, btn) {
     alert(`${src} sync failed: ${e.message}`);
   }
   if (btn) { btn.disabled = false; btn.textContent = o; }
-  initSettings();
+  if (location.pathname === "/materials" && typeof loadMaterials === "function") await loadMaterials();
+  else if (location.pathname === "/settings") initSettings();
 }
 
 async function disconnectGoogle() {
@@ -983,6 +984,26 @@ async function initLibrary() {
   }
 }
 
+function fmtMaterialDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function _materialLinksHtml(links, alternate) {
+  const items = (links || []).map(l =>
+    `<a class="material-attachment" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.title || "Open link")}</a>`
+  );
+  if (alternate) {
+    items.push(
+      `<a class="material-attachment material-classroom" href="${esc(alternate)}" target="_blank" rel="noopener noreferrer">Open in Classroom</a>`
+    );
+  }
+  if (!items.length) return "";
+  return `<div class="material-attachments">${items.join("")}</div>`;
+}
+
 function _materialBooksHtml(books) {
   if (!books || !books.length) {
     return '<div class="material-no-books muted">No library match yet — browse the full <a href="/library">Library</a>.</div>';
@@ -996,36 +1017,95 @@ function _materialBooksHtml(books) {
 }
 
 function materialCard(m) {
-  let body = (m.description || "").trim();
-  body = body.replace(/^type:[A-Z_]+\n?/i, "").trim();
+  const body = (m.description || "").trim();
+  const posted = fmtMaterialDate(m.posted_at || m.created_at);
   return `<article class="material-card">` +
     `<div class="material-head">` +
     `<span class="${srcClass(m.source)}">${esc(sourceLabel(m.source))}</span>` +
     `<span class="muted"> · ${esc(m.course_name || "—")}</span>` +
+    `<span class="muted"> · Posted ${esc(posted)}</span>` +
     `</div>` +
     `<h3 class="material-title">${esc(m.title)}</h3>` +
     (body ? `<p class="material-body">${esc(body)}</p>` : "") +
+    _materialLinksHtml(m.material_links, m.alternate_link) +
     `<div class="material-books-label">Suggested books</div>` +
     _materialBooksHtml(m.books) +
     `</article>`;
+}
+
+function _materialsQuery() {
+  const course = document.getElementById("m-course")?.value || "";
+  const sort = document.getElementById("m-sort")?.value || "date_desc";
+  const params = new URLSearchParams();
+  if (course) params.set("course", course);
+  if (sort && sort !== "date_desc") params.set("sort", sort);
+  const q = params.toString();
+  return q ? `?${q}` : "";
+}
+
+function _populateMaterialsCourses(courses, selected) {
+  const el = document.getElementById("m-course");
+  if (!el) return;
+  el.innerHTML = `<option value="">All classes</option>` +
+    (courses || []).map(c =>
+      `<option value="${esc(c.id)}">${esc(c.name)} (${c.count})</option>`
+    ).join("");
+  el.value = selected || "";
+}
+
+function renderMaterialsList(data) {
+  const list = document.getElementById("materials-list");
+  if (!list) return;
+  const rows = data.materials || [];
+  const course = data.course_id || document.getElementById("m-course")?.value || "";
+  const total = data.total_count || 0;
+  if (!rows.length) {
+    let msg = "No Classroom materials synced yet. Connect Google on Settings, allow the Materials permission, then run Sync Classroom.";
+    if (total > 0 && course) {
+      msg = "No materials in this class.";
+    } else if (total > 0) {
+      msg = "No materials match the current filters.";
+    }
+    list.innerHTML = `<div class="muted">${msg}</div>`;
+    return;
+  }
+  list.innerHTML = `<div class="materials-list">${rows.map(materialCard).join("")}</div>`;
+}
+
+async function loadMaterials() {
+  const sortEl = document.getElementById("m-sort");
+  const courseEl = document.getElementById("m-course");
+  const params = new URLSearchParams(location.search);
+  const course = courseEl?.value || params.get("course") || "";
+  const sort = sortEl?.value || params.get("sort") || "date_desc";
+  if (sortEl) sortEl.value = sort;
+  const qs = new URLSearchParams();
+  if (course) qs.set("course", course);
+  if (sort) qs.set("sort", sort);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const data = await getJSON(`/api/materials${suffix}`);
+  _populateMaterialsCourses(data.courses, course || data.course_id || "");
+  history.replaceState(null, "", `/materials${_materialsQuery()}`);
+  renderMaterialsList(data);
 }
 
 async function initMaterials() {
   renderSidebar("/materials");
   const root = document.getElementById("materials-root");
   if (!root) return;
-  const data = await getJSON("/api/materials");
-  const rows = data.materials || [];
-  if (!rows.length) {
-    const synced = data.classroom_synced || 0;
-    root.innerHTML =
-      '<div class="muted">' +
-      (synced
-        ? `No materials matched yet (${synced} Classroom item${synced === 1 ? "" : "s"} synced). ` +
-          "Try Sync Classroom again, or check that the post title includes a section number (e.g. 9.1) or topic keywords."
-        : "No Classroom items synced yet. Connect Google on Settings, then run Sync Classroom.") +
-      "</div>";
-    return;
-  }
-  root.innerHTML = `<div class="materials-list">${rows.map(materialCard).join("")}</div>`;
+  const params = new URLSearchParams(location.search);
+  root.innerHTML =
+    `<div class="filters materials-toolbar">` +
+    `<select id="m-course" aria-label="Class"><option value="">All classes</option></select>` +
+    `<select id="m-sort" aria-label="Sort materials">` +
+    `<option value="date_desc">Sort: Newest first</option>` +
+    `<option value="date_asc">Sort: Oldest first</option>` +
+    `<option value="title">Sort: Title (A–Z)</option>` +
+    `</select>` +
+    `</div>` +
+    `<div id="materials-list"><div class="muted">Loading materials…</div></div>`;
+  document.getElementById("m-sort").value = params.get("sort") || "date_desc";
+  document.getElementById("m-course").onchange = loadMaterials;
+  document.getElementById("m-sort").onchange = loadMaterials;
+  await loadMaterials();
 }

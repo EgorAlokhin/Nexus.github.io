@@ -1,9 +1,8 @@
 """Filler library catalog — will move to a separate DB later."""
 
+import json
 import re
 from collections import Counter
-
-from django.db.models import Q
 
 from core.models import Task
 
@@ -113,43 +112,165 @@ _TOPIC_HINTS = {
     "equations": ("calculus", "parametric", "parametric equations"),
 }
 
-# Titles that look like textbook sections or class materials (not generic homework).
-_MATERIAL_TITLE_HINTS = (
-    "study guide",
-    "reading",
-    "chapter",
-    "section",
-    "material",
-    "textbook",
-    "notes",
-    "parametric",
-    "defining",
-    "differentiating",
-    "transcendentals",
-)
+_MAT_META_START = "@nexus-mat@"
+_MAT_META_END = "@/nexus-mat@"
+
+
+def course_id_from_external(external_id: str) -> str:
+    eid = external_id or ""
+    if ":mat:" in eid:
+        return eid.split(":mat:", 1)[0]
+    return ""
 
 
 def is_classroom_material(task) -> bool:
-    """Classroom item to show on Materials (API materials + section-style classwork)."""
-    eid = task.external_id or ""
-    if ":ann:" in eid or (task.title or "").startswith("Announcement:"):
+    """Only Google Classroom courseWorkMaterials (non-submittable, no due date)."""
+    if task.source != "classroom":
         return False
-    if ":mat:" in eid:
-        return True
-    title = (task.title or "").strip()
-    if not title:
+    if ":mat:" not in (task.external_id or ""):
         return False
-    if re.search(r"\b\d+\.\d+\b", title):
-        return True
-    low = title.lower()
-    if any(h in low for h in _MATERIAL_TITLE_HINTS):
-        return True
-    desc = (task.description or "").lower()
-    if "type:material" in desc:
-        return True
-    if task.due_date is None:
-        return True
-    return False
+    return task.due_date is None
+
+
+def build_material_links(materials_api_list):
+    links = []
+    for item in materials_api_list or []:
+        if "link" in item:
+            link = item["link"]
+            url = (link.get("url") or "").strip()
+            if url:
+                links.append({"title": (link.get("title") or "Link").strip() or "Link", "url": url})
+            continue
+        if "driveFile" in item:
+            df = (item["driveFile"] or {}).get("driveFile") or {}
+            url = (df.get("alternateLink") or "").strip()
+            if not url and df.get("id"):
+                url = f"https://drive.google.com/file/d/{df['id']}/view"
+            if url:
+                links.append({
+                    "title": (df.get("title") or "Drive file").strip() or "Drive file",
+                    "url": url,
+                })
+            continue
+        if "youtubeVideo" in item:
+            vid = item["youtubeVideo"] or {}
+            url = (vid.get("alternateLink") or "").strip()
+            if not url and vid.get("id"):
+                url = f"https://www.youtube.com/watch?v={vid['id']}"
+            if url:
+                links.append({
+                    "title": (vid.get("title") or "YouTube video").strip() or "YouTube video",
+                    "url": url,
+                })
+            continue
+        if "form" in item:
+            form = item["form"] or {}
+            url = (form.get("formUrl") or form.get("responseUrl") or "").strip()
+            if url:
+                links.append({
+                    "title": (form.get("title") or "Google Form").strip() or "Google Form",
+                    "url": url,
+                })
+    return links
+
+
+def encode_material_description(meta, body=""):
+    payload = json.dumps(meta, separators=(",", ":"), ensure_ascii=False)
+    user = (body or "").strip()
+    block = f"{_MAT_META_START}{payload}{_MAT_META_END}"
+    return f"{block}\n{user}" if user else block
+
+
+def parse_material_description(raw):
+    text = raw or ""
+    start = text.find(_MAT_META_START)
+    end = text.find(_MAT_META_END)
+    if start == -1 or end == -1:
+        return {}, text.strip()
+    meta_raw = text[start + len(_MAT_META_START):end]
+    body = (text[end + len(_MAT_META_END):]).lstrip("\n").strip()
+    try:
+        meta = json.loads(meta_raw)
+    except (json.JSONDecodeError, TypeError):
+        meta = {}
+    return meta if isinstance(meta, dict) else {}, body
+
+
+def _material_sort_key(item, sort):
+    if sort == "title":
+        return (item.get("title") or "").lower()
+    return item.get("posted_at") or item.get("created_at") or ""
+
+
+def materials_payload(course_id="", sort="date_desc"):
+    sort = sort if sort in ("date_desc", "date_asc", "title") else "date_desc"
+    base = Task.objects.only_classroom_materials().filter(due_date__isnull=True)
+
+    course_counts = Counter()
+    course_names = {}
+    for t in base:
+        if not is_classroom_material(t):
+            continue
+        cid = course_id_from_external(t.external_id)
+        if not cid:
+            continue
+        course_counts[cid] += 1
+        if t.course_name:
+            course_names[cid] = t.course_name
+
+    rows = base
+    if course_id:
+        rows = rows.filter(external_id__startswith=f"{course_id}:mat:")
+
+    materials = []
+    for t in rows:
+        if not is_classroom_material(t):
+            continue
+        materials.append(_material_dict(t))
+
+    materials.sort(
+        key=lambda m: _material_sort_key(m, sort),
+        reverse=(sort == "date_desc"),
+    )
+
+    courses = [
+        {
+            "id": cid,
+            "name": (course_names.get(cid) or "Class").strip() or "Class",
+            "count": course_counts[cid],
+        }
+        for cid in sorted(course_names, key=lambda c: course_names[c].lower())
+    ]
+
+    return {
+        "materials": materials,
+        "courses": courses,
+        "count": len(materials),
+        "total_count": sum(course_counts.values()),
+        "sort": sort,
+        "course_id": course_id or "",
+    }
+
+
+def _material_dict(task):
+    meta, body = parse_material_description(task.description)
+    links = meta.get("links") or []
+    if not isinstance(links, list):
+        links = []
+    posted_at = meta.get("posted_at") or (task.created_at.isoformat() if task.created_at else None)
+    d = task.as_dict()
+    d["description"] = body
+    d["course_id"] = course_id_from_external(task.external_id)
+    d["posted_at"] = posted_at
+    d["alternate_link"] = meta.get("alternate_link") or ""
+    d["material_links"] = [
+        {"title": (x.get("title") or "Link"), "url": (x.get("url") or "")}
+        for x in links
+        if isinstance(x, dict) and (x.get("url") or "").strip()
+    ]
+    d["is_material"] = True
+    d["books"] = match_books_for_material(task.title, body, task.course_name)
+    return d
 
 
 def _book_dict(book):
@@ -247,27 +368,4 @@ def library_payload():
         "books": books,
         "suggested": suggested,
         "workload_by_course": dict(workload.most_common(10)),
-    }
-
-
-def materials_payload():
-    candidates = (
-        Task.objects.filter(source="classroom")
-        .exclude(Q(external_id__contains=":ann:") | Q(title__startswith="Announcement:"))
-        .order_by("-created_at")
-    )
-    materials = []
-    for t in candidates:
-        if not is_classroom_material(t):
-            continue
-        d = t.as_dict()
-        eid = t.external_id or ""
-        d["is_material"] = True
-        d["material_kind"] = "google_material" if ":mat:" in eid else "classwork"
-        d["books"] = match_books_for_material(t.title, t.description, t.course_name)
-        materials.append(d)
-    return {
-        "materials": materials,
-        "count": len(materials),
-        "classroom_synced": candidates.count(),
     }

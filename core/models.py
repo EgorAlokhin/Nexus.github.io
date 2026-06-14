@@ -33,10 +33,17 @@ class TaskQuerySet(models.QuerySet):
             Q(external_id__contains=":ann:") | Q(title__startswith="Announcement:")
         )
 
+    def exclude_classroom_materials(self):
+        return self.exclude(external_id__contains=":mat:")
+
+    def only_classroom_materials(self):
+        return self.filter(source="classroom", external_id__contains=":mat:")
+
     def for_worklist(self):
         gradable = list(BUZZ_GRADABLE_TYPES)
         return (
             self.exclude_announcements()
+            .exclude_classroom_materials()
             .exclude(source__in=["news", "activity"])
             .filter(Q(source__in=["gmail", "classroom", "veracross"]) | Q(source="buzz", description__in=gradable))
         )

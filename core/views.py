@@ -227,7 +227,9 @@ def api_library(request):
 
 @require_GET
 def api_materials(request):
-    return _json(materials_payload())
+    course_id = (request.GET.get("course") or "").strip()
+    sort = (request.GET.get("sort") or "date_desc").strip()
+    return _json(materials_payload(course_id=course_id, sort=sort))
 
 
 @csrf_exempt

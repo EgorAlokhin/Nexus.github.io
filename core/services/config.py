@@ -73,6 +73,7 @@ def upsert_task(
     description="",
     course_name="",
     is_completed=_UNSET,
+    created_at=_UNSET,
 ):
     t = None
     if external_id:
@@ -88,9 +89,11 @@ def upsert_task(
             t.course_name = course_name
         if is_completed is not _UNSET:
             t.is_completed = bool(is_completed)
+        if created_at is not _UNSET and created_at is not None:
+            t.created_at = created_at
         t.save()
     else:
-        t = Task.objects.create(
+        kw = dict(
             source=source,
             external_id=external_id,
             title=title or "(untitled)",
@@ -99,6 +102,9 @@ def upsert_task(
             course_name=course_name or "",
             is_completed=bool(is_completed) if is_completed is not _UNSET else False,
         )
+        if created_at is not _UNSET and created_at is not None:
+            kw["created_at"] = created_at
+        t = Task.objects.create(**kw)
     return t
 
 

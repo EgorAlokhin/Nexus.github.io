@@ -344,10 +344,19 @@ select { border: 1px solid var(--border); background: var(--bg); color: var(--te
 .library-match { margin-top: 10px; font-size: 12px; color: var(--text-secondary); font-style: italic; }
 
 .materials-list { display: flex; flex-direction: column; gap: 16px; }
+.materials-toolbar { flex-wrap: wrap; align-items: center; }
+.materials-toolbar select { min-width: 220px; }
 .material-card { border: 1px solid var(--border); padding: 16px; background: var(--surface); }
 .material-head { font-size: 13px; margin-bottom: 8px; }
 .material-title { margin: 0 0 10px; font-size: 17px; line-height: 1.3; }
 .material-body { margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: var(--text-secondary); white-space: pre-wrap; }
+.material-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.material-attachment {
+  display: inline-block; border: 1px solid var(--border); padding: 8px 12px;
+  background: var(--bg-secondary); font-size: 13px; text-decoration: none; color: var(--text);
+}
+.material-attachment:hover { border-color: var(--accent); color: var(--accent); }
+.material-classroom { font-weight: 600; }
 .material-books-label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin: 12px 0 8px; color: var(--text-secondary); }
 .material-books { display: flex; flex-direction: column; gap: 8px; }
 .material-book-link { border: 1px solid var(--border); padding: 10px 12px; background: var(--bg-secondary); font-size: 13px; line-height: 1.4; }

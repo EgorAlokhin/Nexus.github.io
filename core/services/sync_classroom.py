@@ -2,8 +2,9 @@ from googleapiclient.discovery import build
 
 from core.models import Task
 from core.services.auth_google import get_google_credentials
-from core.services.config import upsert_task
+from core.services.config import parse_due_datetime, upsert_task
 from core.services.dates import classroom_due
+from core.services.library import build_material_links, encode_material_description
 
 _DONE_STATES = frozenset({
     "TURNED_IN",
@@ -178,14 +179,22 @@ def sync_classroom():
             mid = mat["id"]
             ext_id = f"{cid}:mat:{mid}"
             seen_ids.add(ext_id)
+            posted_raw = mat.get("creationTime") or mat.get("updateTime")
+            posted_at = parse_due_datetime(posted_raw)
+            meta = {
+                "posted_at": posted_raw,
+                "alternate_link": mat.get("alternateLink") or "",
+                "links": build_material_links(mat.get("materials")),
+            }
             upsert_task(
                 source="classroom",
                 external_id=ext_id,
                 title=mat.get("title", "(material)"),
-                description=f"type:MATERIAL\n{mat.get('description', '')}".strip(),
+                description=encode_material_description(meta, mat.get("description") or ""),
                 due_date=None,
                 course_name=cname,
                 is_completed=False,
+                created_at=posted_at,
             )
             count += 1
         for a in _list_announcements(service, cid):
