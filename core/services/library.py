@@ -3,6 +3,8 @@
 import re
 from collections import Counter
 
+from django.db.models import Q
+
 from core.models import Task
 
 LIBRARY_BOOKS = [
@@ -108,7 +110,46 @@ _TOPIC_HINTS = {
     "history": ("history", "american history", "world history"),
     "literature": ("american literature", "modernism"),
     "gatsby": ("american literature", "modernism"),
+    "equations": ("calculus", "parametric", "parametric equations"),
 }
+
+# Titles that look like textbook sections or class materials (not generic homework).
+_MATERIAL_TITLE_HINTS = (
+    "study guide",
+    "reading",
+    "chapter",
+    "section",
+    "material",
+    "textbook",
+    "notes",
+    "parametric",
+    "defining",
+    "differentiating",
+    "transcendentals",
+)
+
+
+def is_classroom_material(task) -> bool:
+    """Classroom item to show on Materials (API materials + section-style classwork)."""
+    eid = task.external_id or ""
+    if ":ann:" in eid or (task.title or "").startswith("Announcement:"):
+        return False
+    if ":mat:" in eid:
+        return True
+    title = (task.title or "").strip()
+    if not title:
+        return False
+    if re.search(r"\b\d+\.\d+\b", title):
+        return True
+    low = title.lower()
+    if any(h in low for h in _MATERIAL_TITLE_HINTS):
+        return True
+    desc = (task.description or "").lower()
+    if "type:material" in desc:
+        return True
+    if task.due_date is None:
+        return True
+    return False
 
 
 def _book_dict(book):
@@ -210,14 +251,23 @@ def library_payload():
 
 
 def materials_payload():
-    rows = Task.objects.filter(
-        source="classroom",
-        external_id__contains=":mat:",
-    ).order_by("-created_at")
+    candidates = (
+        Task.objects.filter(source="classroom")
+        .exclude(Q(external_id__contains=":ann:") | Q(title__startswith="Announcement:"))
+        .order_by("-created_at")
+    )
     materials = []
-    for t in rows:
+    for t in candidates:
+        if not is_classroom_material(t):
+            continue
         d = t.as_dict()
+        eid = t.external_id or ""
         d["is_material"] = True
+        d["material_kind"] = "google_material" if ":mat:" in eid else "classwork"
         d["books"] = match_books_for_material(t.title, t.description, t.course_name)
         materials.append(d)
-    return {"materials": materials, "count": len(materials)}
+    return {
+        "materials": materials,
+        "count": len(materials),
+        "classroom_synced": candidates.count(),
+    }

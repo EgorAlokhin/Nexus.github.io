@@ -996,7 +996,8 @@ function _materialBooksHtml(books) {
 }
 
 function materialCard(m) {
-  const body = (m.description || "").trim();
+  let body = (m.description || "").trim();
+  body = body.replace(/^type:[A-Z_]+\n?/i, "").trim();
   return `<article class="material-card">` +
     `<div class="material-head">` +
     `<span class="${srcClass(m.source)}">${esc(sourceLabel(m.source))}</span>` +
@@ -1016,7 +1017,14 @@ async function initMaterials() {
   const data = await getJSON("/api/materials");
   const rows = data.materials || [];
   if (!rows.length) {
-    root.innerHTML = '<div class="muted">No Classroom materials yet. Connect Google and run Sync Classroom.</div>';
+    const synced = data.classroom_synced || 0;
+    root.innerHTML =
+      '<div class="muted">' +
+      (synced
+        ? `No materials matched yet (${synced} Classroom item${synced === 1 ? "" : "s"} synced). ` +
+          "Try Sync Classroom again, or check that the post title includes a section number (e.g. 9.1) or topic keywords."
+        : "No Classroom items synced yet. Connect Google on Settings, then run Sync Classroom.") +
+      "</div>";
     return;
   }
   root.innerHTML = `<div class="materials-list">${rows.map(materialCard).join("")}</div>`;

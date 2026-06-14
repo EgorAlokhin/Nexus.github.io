@@ -158,11 +158,15 @@ def sync_classroom():
             ext_id = f"{cid}:{wid}"
             seen_ids.add(ext_id)
             handed_in = _handed_in(service, cid, wid, submissions)
+            work_type = (w.get("workType") or "").strip()
+            body = w.get("description") or ""
+            if work_type:
+                body = f"type:{work_type}\n{body}" if body else f"type:{work_type}"
             kw = dict(
                 source="classroom",
                 external_id=ext_id,
                 title=w.get("title", "(untitled)"),
-                description=w.get("description", ""),
+                description=body,
                 due_date=classroom_due(w),
                 course_name=cname,
             )
@@ -178,7 +182,7 @@ def sync_classroom():
                 source="classroom",
                 external_id=ext_id,
                 title=mat.get("title", "(material)"),
-                description=mat.get("description", ""),
+                description=f"type:MATERIAL\n{mat.get('description', '')}".strip(),
                 due_date=None,
                 course_name=cname,
                 is_completed=False,
