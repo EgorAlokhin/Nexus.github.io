@@ -171,21 +171,29 @@ def _user_for_google_email(email: str) -> User:
 
 
 def auth_google_callback(request, code: str = "", state: str = ""):
+    # Pre-login failures must surface on /login (an anonymous user redirected to
+    # /settings would otherwise be silently bounced back to /login with no error).
+    was_authed = bool(request and getattr(request, "user", None) and request.user.is_authenticated)
+    err_base = "/settings" if was_authed else "/login"
+
+    provider_error = (request.GET.get("error") if request else "") or ""
+    if provider_error:
+        return redirect(f"{err_base}?oauth_error={quote('Google: ' + provider_error)}")
     if not code:
-        return redirect("/settings?oauth_error=missing_code")
+        return redirect(f"{err_base}?oauth_error=missing_code")
     expected_state = (request.session.pop("google_oauth_state", "") if request else "") or ""
     if expected_state and state and expected_state != state:
-        return redirect("/settings?oauth_error=" + quote("State mismatch — please retry sign-in."))
+        return redirect(f"{err_base}?oauth_error=" + quote("State mismatch — please retry sign-in."))
     try:
         flow = _flow(state=expected_state or state or None)
         flow.fetch_token(code=code)
         creds = flow.credentials
     except Exception as exc:
-        return redirect(f"/settings?oauth_error={quote(str(exc)[:200])}")
+        return redirect(f"{err_base}?oauth_error={quote(str(exc)[:200])}")
 
     email = _fetch_google_email(creds.token)
     if not email:
-        return redirect("/settings?oauth_error=" + quote("Could not read Google account email."))
+        return redirect(f"{err_base}?oauth_error=" + quote("Could not read Google account email."))
     email = email.strip().lower()
 
     # Determine which user this Google login belongs to.

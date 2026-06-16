@@ -468,6 +468,9 @@ select { border: 1px solid var(--border); background: var(--bg); color: var(--te
 .auth-divider::before, .auth-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
 .auth-google { display: block; width: 100%; text-align: center; padding: 10px; }
 .auth-note { margin-top: 18px; line-height: 1.5; text-align: center; }
+.auth-forgot { margin: 10px 0 0; text-align: center; font-size: 12px; }
+.auth-forgot a { color: var(--accent); }
+.auth-forgot-help { margin: 8px 0 0; line-height: 1.5; font-size: 12px; padding: 8px 10px; border: 1px solid var(--border); }
 
 /* ===================================================================
    STYLING FIXES — collapsed panels actually collapse

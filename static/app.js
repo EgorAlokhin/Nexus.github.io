@@ -742,7 +742,31 @@ function initLogin() {
   tabs.forEach(btn => btn.onclick = () => setAuthMode(btn.dataset.authTab));
   const form = document.getElementById("auth-form");
   if (form) form.onsubmit = (e) => { e.preventDefault(); submitAuth(); };
+  const forgot = document.getElementById("forgot-link");
+  if (forgot) forgot.onclick = (e) => {
+    e.preventDefault();
+    const help = document.getElementById("forgot-help");
+    if (help) help.style.display = help.style.display === "none" ? "block" : "none";
+  };
+  showLoginOAuthBanner();
   setAuthMode("login");
+}
+function showLoginOAuthBanner() {
+  const banner = document.getElementById("oauth-banner");
+  if (!banner) return;
+  const params = new URLSearchParams(location.search);
+  if (params.get("oauth_error")) {
+    banner.className = "oauth-banner err";
+    banner.style.display = "block";
+    banner.textContent = "Google sign-in failed: " + params.get("oauth_error");
+  } else if (params.get("oauth") === "ok") {
+    banner.className = "oauth-banner ok";
+    banner.style.display = "block";
+    banner.textContent = "Google connected. Signing you in…";
+  } else {
+    return;
+  }
+  history.replaceState(null, "", location.pathname);
 }
 function setAuthMode(mode) {
   _authMode = mode === "register" ? "register" : "login";
