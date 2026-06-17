@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nexus / Settings</title>
-<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', 'fresh');</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -13,101 +14,17 @@
   <div class="topbar">
     <div class="breadcrumb">NEXUS / SETTINGS</div>
   </div>
-
   <div id="oauth-banner" class="oauth-banner" style="display:none"></div>
-
-  <div class="account-hero">
-    <div class="section-h">QUICK SETUP</div>
-    <p class="muted">1. Connect Google below. 2. Add Veracross credentials on <a href="/account">Account</a>. Then Sync All.</p>
+  <div class="settings-tabs">
+    <button class="ann-tab active" data-settings-tab="connections">Connections</button>
+    <button class="ann-tab" data-settings-tab="messages">Messages</button>
+    <button class="ann-tab" data-settings-tab="profile">AI &amp; Profile</button>
+    <button class="ann-tab" data-settings-tab="sidebar">Sidebar</button>
+    <button class="ann-tab" data-settings-tab="support">Support</button>
   </div>
-
-  <div class="section-h">CONNECTIONS</div>
-
-  <div class="settings-row">
-    <div class="row-head">
-      <div>
-        <div class="status-name">Google (Gmail + Classroom)</div>
-        <div class="muted" id="google-status">—</div>
-        <div class="muted" id="google-email"></div>
-      </div>
-      <div class="row-actions">
-        <a class="btn" href="/auth/google" id="google-connect-btn">Connect Google</a>
-        <button type="button" class="btn" id="google-disconnect-btn" onclick="disconnectGoogle()" hidden>Disconnect</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="settings-row">
-    <div class="row-head">
-      <div>
-        <div class="status-name src-gmail">Gmail</div>
-        <div class="muted" id="st-gmail">—</div>
-      </div>
-      <button onclick="syncOne('gmail', this)">Sync</button>
-    </div>
-  </div>
-
-  <div class="settings-row">
-    <div class="row-head">
-      <div>
-        <div class="status-name src-classroom">Classroom</div>
-        <div class="muted" id="st-classroom">—</div>
-      </div>
-      <button onclick="syncOne('classroom', this)">Sync</button>
-    </div>
-  </div>
-
-  <div class="settings-row">
-    <div class="row-head">
-      <div>
-        <div class="status-name src-buzz">Buzz / Accelerate</div>
-        <div class="muted" id="st-buzz">—</div>
-      </div>
-      <button onclick="syncOne('buzz', this)">Sync</button>
-    </div>
-  </div>
-
-  <div class="settings-row">
-    <div class="row-head">
-      <div>
-        <div class="status-name src-veracross">Veracross</div>
-        <div class="muted" id="st-veracross">—</div>
-      </div>
-      <button onclick="syncOne('veracross', this)">Sync</button>
-    </div>
-  </div>
-
-  <div class="section-h">NOTIFICATIONS</div>
-  <div class="settings-row">
-    <div class="row-head">
-      <div class="muted">
-        SMS/WhatsApp timing and reminders are on the
-        <a href="/notifications">Notifications</a> page.
-      </div>
-      <a class="btn" href="/notifications">Notification settings</a>
-    </div>
-  </div>
-
-  <div class="section-h">APPEARANCE</div>
-  <div class="settings-row">
-    <div class="row-head">
-      <div class="muted">
-        Light/Dark toggle is in the sidebar. Pick the overall look: <strong>Fresh</strong> is a lighter,
-        barely-rounded minimalist style; <strong>Classic</strong> is the original square design. Saved on this device.
-      </div>
-      <div class="row-actions">
-        <button type="button" id="skin-btn" onclick="toggleSkin()">Fresh look</button>
-      </div>
-    </div>
-  </div>
+  <div id="settings-root"><div class="muted">Loading…</div></div>
 </div>
-<script src="/static/app.js?v=21"></script>
-<script>
-  initSettings();
-  (function () {
-    var b = document.getElementById("skin-btn");
-    if (b) b.textContent = (currentSkin() === "fresh") ? "Classic look" : "Fresh look";
-  })();
-</script>
+<script src="/static/app.js?v=25"></script>
+<script>initSettings();</script>
 </body>
 </html>

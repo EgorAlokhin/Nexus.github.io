@@ -44,7 +44,14 @@ _SYNONYMS = {
     "chem": "chemistry",
     "phys": "physics",
     "econ": "economics",
+    "micro": "microeconomics economics",
+    "macro": "macroeconomics economics",
+    "microecon": "microeconomics economics",
+    "macroecon": "macroeconomics economics",
+    "microeconomics": "microeconomics economics",
+    "macroeconomics": "macroeconomics economics",
     "gov": "government",
+    "govt": "government",
     "psych": "psychology",
     "hist": "history",
     "geo": "geography",
@@ -109,6 +116,8 @@ def _attach_grades(clusters, user):
     grades = list(Grade.objects.filter(user=user))
     best = {}  # idx -> (source_rank, quality, grade)
     for g in grades:
+        if _is_non_class(g.course_name or ""):
+            continue
         toks = _tokens(g.course_name) or {(g.course_name or "").lower()}
         idx = None
         for i, cl in enumerate(clusters):
@@ -153,6 +162,23 @@ def _slug(name: str) -> str:
     return s or "class"
 
 
+# Course names that are administrative/non-academic and should not appear as a
+# class on the dashboard (e.g. "11th Grade Academic Advising", homeroom, lunch).
+_NON_CLASS_RE = re.compile(
+    r"\b("
+    r"academic\s+advising|advising|advisory|homeroom|home\s*room|"
+    r"study\s*hall|free\s*period|flex(\s*time)?|lunch|recess|assembly|"
+    r"office\s*hours|tutorial|mentoring|mentorship|seminar\s*advisory|"
+    r"college\s+counseling|counseling|community\s+time|morning\s+meeting"
+    r")\b",
+    re.I,
+)
+
+
+def _is_non_class(name: str) -> bool:
+    return bool(_NON_CLASS_RE.search(name or ""))
+
+
 def courses_payload(user):
     tasks = list(
         Task.objects.for_user(user).for_worklist().order_by(
@@ -165,6 +191,9 @@ def courses_payload(user):
         name = (t.course_name or "").strip()
         if not name:
             name = "Unsorted"
+        # Skip administrative pseudo-classes (advising, homeroom, lunch, …).
+        if _is_non_class(name):
+            continue
         toks = _tokens(name) or {name.lower()}
         placed = None
         for cl in clusters:

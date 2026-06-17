@@ -1,6 +1,6 @@
 from django.urls import path
 
-from core import views
+from core import views, views_extra
 
 urlpatterns = [
     path("", views.index, name="index"),
@@ -14,6 +14,16 @@ urlpatterns = [
     path("notifications", views.notifications_page),
     path("library", views.library_page),
     path("materials", views.materials_page),
+    # Community + admin pages
+    path("community", views_extra.community_page),
+    path("community/news", views_extra.community_news_page),
+    path("community/journal", views_extra.community_journal_page),
+    path("community/journal/file", views_extra.serve_journal),
+    path("community/clubs", views_extra.clubs_page),
+    path("community/club", views_extra.club_portal_page),
+    path("community/clubs/<int:club_id>/image", views_extra.serve_club_image),
+    path("community/chat", views_extra.school_chat_page),
+    path("platform-config", views_extra.platform_config_page),
     # Local auth
     path("api/auth/login", views.auth_login),
     path("api/auth/register", views.auth_register),
@@ -42,6 +52,10 @@ urlpatterns = [
     path("auth/google/disconnect", views.auth_google_disconnect),
     path("ai/chat", views.ai_chat),
     path("ai/digest", views.ai_digest),
+    path("api/chat/conversations", views.api_conversations),
+    path("api/chat/conversations/new", views.api_conversation_new),
+    path("api/chat/conversations/<int:conv_id>", views.api_conversation_messages),
+    path("api/chat/conversations/<int:conv_id>/delete", views.api_conversation_delete),
     path("api/settings", views.settings_api),
     path("api/settings/test-login", views.test_logins),
     path("api/admin/credentials", views.admin_credentials_api),
@@ -51,4 +65,39 @@ urlpatterns = [
     path("sms/incoming", views.sms_incoming),
     path("whatsapp/incoming", views.whatsapp_incoming),
     path("telegram/webhook", views.telegram_webhook),
+    # In-app notification feed
+    path("api/notifications/feed", views_extra.api_notifications_feed),
+    path("api/notifications/unread", views_extra.api_notifications_unread),
+    path("api/notifications/read", views_extra.api_notifications_read),
+    # Community
+    path("api/community/profile", views_extra.api_community_profile),
+    path("api/community/overview", views_extra.api_community_overview),
+    path("api/community/news", views_extra.api_community_news),
+    path("api/community/journal", views_extra.api_community_journal),
+    path("api/community/journal/upload", views_extra.api_journal_upload),
+    # Clubs
+    path("api/clubs", views_extra.api_clubs),
+    path("api/clubs/create", views_extra.api_clubs_create),
+    path("api/clubs/<int:club_id>", views_extra.api_club_detail),
+    path("api/clubs/<int:club_id>/join", views_extra.api_club_join),
+    path("api/clubs/<int:club_id>/update", views_extra.api_club_update),
+    path("api/clubs/<int:club_id>/delete", views_extra.api_club_delete),
+    path("api/clubs/<int:club_id>/image", views_extra.api_club_image_upload),
+    path("api/clubs/<int:club_id>/news", views_extra.api_club_news_add),
+    path("api/clubs/<int:club_id>/news/<int:news_id>/delete", views_extra.api_club_news_delete),
+    path("community/club-news/<int:news_id>/file/<int:attachment_id>", views_extra.serve_club_news_file),
+    path("api/clubs/<int:club_id>/chat", views_extra.api_club_chat),
+    path("api/clubs/<int:club_id>/chat/send", views_extra.api_club_chat_send),
+    # School chat
+    path("api/school-chat", views_extra.api_school_chat),
+    path("api/school-chat/send", views_extra.api_school_chat_send),
+    # Platform config (admin)
+    path("api/platform/config", views_extra.api_platform_config),
+    path("api/platform/admins", views_extra.api_platform_admins),
+    path("api/platform/wipe", views_extra.api_platform_wipe),
+    path("api/admins", views_extra.api_admins),
+    # Year-at-a-glance calendar overview
+    path("api/calendar/overview", views_extra.api_calendar_overview),
+    path("api/calendar/overview/upload", views_extra.api_calendar_overview_upload),
+    path("calendar/overview/file", views_extra.serve_calendar_overview),
 ]

@@ -12,6 +12,7 @@
 <div class="main">
   <div class="topbar">
     <div class="breadcrumb">NEXUS / CALENDAR</div>
+    <button type="button" class="btn" id="cal-overview-btn" onclick="showYearOverview()">Year overview</button>
   </div>
 
   <div class="cal-layout">
@@ -21,6 +22,7 @@
         <div class="section-h" id="cal-title"></div>
         <button onclick="calMove(1)">Next</button>
       </div>
+      <div id="cal-legend" class="cal-legend"></div>
       <div id="cal-overdue" class="cal-overdue" hidden></div>
       <div id="cal-undated" class="cal-overdue" hidden></div>
       <div class="cal-grid" id="cal-grid"></div>
@@ -37,7 +39,7 @@
     </div>
   </div>
 </div>
-<script src="/static/app.js?v=21"></script>
+<script src="/static/app.js?v=25"></script>
 <script>initCalendar();</script>
 </body>
 </html>

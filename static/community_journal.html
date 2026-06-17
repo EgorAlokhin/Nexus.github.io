@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / BHS Journal</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', localStorage.getItem('nexus-skin') || 'fresh');</script>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / <span id="journal-title">BHS JOURNAL</span></div>
+    <a class="btn" href="/community">Community</a>
+  </div>
+  <div id="journal-root"><div class="muted">Loading…</div></div>
+</div>
+<script src="/static/app.js?v=25"></script>
+<script>initCommunityJournal();</script>
+</body>
+</html>

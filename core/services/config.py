@@ -9,6 +9,12 @@ from core.services.context import get_current_account
 
 _UNSET = object()
 
+# Sensible per-user defaults so students don't have to paste portal URLs.
+USER_DEFAULTS = {
+    "VERACROSS_URL": "https://portals.veracross.eu/iase/student/student",
+    "BUZZ_DOMAIN": "accelerate-eww-bhs.vschool.com",
+}
+
 
 def cfg(key, default=None):
     """Global / infrastructure config (Setting table then environment).
@@ -24,12 +30,18 @@ def cfg(key, default=None):
 
 
 def user_cfg(key, default=None, account=None):
-    """Per-user config read from the active Account (no global fallback)."""
+    """Per-user config read from the active Account.
+
+    Falls back to a built-in default (USER_DEFAULTS) for keys like the Veracross
+    portal URL and Buzz domain so students only enter username + password.
+    """
     account = account if account is not None else get_current_account()
     if account is not None:
         v = account.get(key)
         if v not in (None, ""):
             return v
+    if key in USER_DEFAULTS:
+        return USER_DEFAULTS[key]
     return default
 
 

@@ -3,61 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Nexus / SMS</title>
-<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');</script>
+<title>Nexus / Notifications</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', 'fresh');</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <div class="sidebar" id="sidebar"></div>
 <div class="main">
   <div class="topbar">
-    <div class="breadcrumb">NEXUS / SMS &amp; CHATBOT</div>
+    <div class="breadcrumb">NEXUS / NOTIFICATIONS</div>
+    <a class="btn" href="/settings">Message settings</a>
   </div>
 
-  <div id="sms-status-box" class="settings-row"></div>
-  <div id="notify-status" class="login-status muted"></div>
-
-  <form id="notify-form" class="cred-form">
-    <div class="cred-group">
-      <div class="section-h">CHANNEL</div>
-      <label class="cred-field"><span>Send my reminders &amp; digests via</span>
-        <select id="notification_channel">
-          <option value="sms">SMS</option>
-          <option value="whatsapp">WhatsApp</option>
-          <option value="telegram">Telegram</option>
-        </select>
-      </label>
-      <div class="muted channel-hint" id="channel-hint"></div>
-    </div>
-
-    <div class="cred-group">
-      <div class="section-h">CHATBOT</div>
-      <label class="cred-check"><input type="checkbox" id="chatbot_enabled" checked>
-        When I text the number, reply with the AI assistant (same as web Chat)</label>
-    </div>
-
-    <div class="cred-group">
-      <div class="section-h">SCHEDULED MESSAGES</div>
-      <label class="cred-check"><input type="checkbox" id="daily_digest_enabled"> Morning task summary (SMS)</label>
-      <label class="cred-field"><span>Hour (0–23)</span><input type="number" id="daily_digest_hour" min="0" max="23" value="7"></label>
-      <label class="cred-check"><input type="checkbox" id="reminders_enabled"> Reminders before deadlines</label>
-      <label class="cred-field"><span>Remind within (hours)</span><input type="number" id="reminder_hours_before" min="1" max="72" value="2"></label>
-      <label class="cred-check"><input type="checkbox" id="background_sync_enabled"> Background sync</label>
-    </div>
-
-    <details class="admin-creds">
-      <summary class="muted">WhatsApp / Telegram (optional, extra admin setup)</summary>
-      <p class="muted">Not required. WhatsApp needs a separate Twilio WhatsApp sender (<code>whatsapp:+…</code>), not the SMS number.</p>
-    </details>
-  </form>
-
-  <div class="login-actions">
-    <button type="button" class="btn" id="notify-save">Save</button>
-    <button type="button" class="btn" id="notify-test">Send test SMS</button>
-    <a class="btn" href="/account">Account</a>
+  <div class="section-h">NOTIFICATION FEED
+    <button type="button" class="btn" id="notif-mark-all" style="margin-left:auto">Mark all read</button>
   </div>
+  <div class="ann-tabs">
+    <button class="ann-tab active" data-notif-tab="">All</button>
+    <button class="ann-tab" data-notif-tab="task">Tasks</button>
+    <button class="ann-tab" data-notif-tab="grade">Grades</button>
+    <button class="ann-tab" data-notif-tab="announcement">Announcements</button>
+    <button class="ann-tab" data-notif-tab="club">Clubs</button>
+    <button class="ann-tab" data-notif-tab="other">Other</button>
+  </div>
+  <div id="notif-feed" class="notif-feed"><div class="muted">Loading…</div></div>
 </div>
-<script src="/static/app.js?v=21"></script>
+<script src="/static/app.js?v=25"></script>
 <script>initNotifications();</script>
 </body>
 </html>

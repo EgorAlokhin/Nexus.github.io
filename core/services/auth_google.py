@@ -82,13 +82,87 @@ def session_email() -> str | None:
     return email or None
 
 
+def extra_admin_emails() -> list:
+    """Admins added by the owner (stored in the Setting table)."""
+    import json as _json
+
+    from core.services.config import setting_get
+
+    raw = setting_get("EXTRA_ADMIN_EMAILS")
+    if not raw:
+        return []
+    try:
+        data = _json.loads(raw)
+        return [str(e).strip().lower() for e in data if str(e).strip()]
+    except (ValueError, TypeError):
+        return []
+
+
+def all_admin_emails() -> list:
+    """Owner first, then any added admins (deduped)."""
+    out = []
+    owner = admin_email()
+    if owner:
+        out.append(owner)
+    for e in extra_admin_emails():
+        if e not in out:
+            out.append(e)
+    return out
+
+
+def is_owner() -> bool:
+    """The single platform owner (ADMIN_EMAIL). Highest privilege."""
+    email = (session_email() or "").strip().lower()
+    owner = admin_email()
+    return bool(email and owner and email == owner)
+
+
 def is_admin() -> bool:
     a = current_account()
     if not a:
         return False
     if a.user.is_superuser:
         return True
-    return (a.google_email or a.user.email or "").strip().lower() == admin_email()
+    email = (a.google_email or a.user.email or "").strip().lower()
+    if not email:
+        return False
+    return email == admin_email() or email in extra_admin_emails()
+
+
+def add_admin_email(email: str) -> bool:
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        return False
+    if email == admin_email():
+        return False
+    import json as _json
+
+    from core.services.config import setting_set
+
+    current = extra_admin_emails()
+    if email not in current:
+        current.append(email)
+        setting_set("EXTRA_ADMIN_EMAILS", _json.dumps(current))
+    return True
+
+
+def remove_admin_email(email: str) -> bool:
+    email = (email or "").strip().lower()
+    import json as _json
+
+    from core.services.config import setting_set
+
+    current = extra_admin_emails()
+    if email in current:
+        current = [e for e in current if e != email]
+        setting_set("EXTRA_ADMIN_EMAILS", _json.dumps(current))
+        return True
+    return False
+
+
+def can_delete_clubs() -> bool:
+    """Only the configured platform owner may permanently delete clubs."""
+    return is_owner()
 
 
 def _fetch_google_email(access_token: str) -> str | None:

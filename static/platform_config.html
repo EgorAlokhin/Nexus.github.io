@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Platform Config</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', localStorage.getItem('nexus-skin') || 'fresh');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar"><div class="breadcrumb">NEXUS / PLATFORM CONFIG</div></div>
+  <p class="muted">Administrator-only platform settings: community controls and shared server credentials.</p>
+  <div id="platform-root"><div class="muted">Loading…</div></div>
+</div>
+<script src="/static/app.js?v=25"></script>
+<script>initPlatformConfig();</script>
+</body>
+</html>

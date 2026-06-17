@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.conf import settings
 from openai import OpenAI
 
-from core.models import ChatMessage, Task
+from core.models import ChatMessage, Conversation, Task
 from core.services.config import cfg
 from core.services.dates import normalize_due, utc_now
 from core.services.model_select import (
@@ -58,6 +58,36 @@ def _create_message(model, system, messages, max_tokens=2048):
 
 def _is_math(message):
     return any(w in (message or "").lower() for w in MATH_WORDS)
+
+
+def student_profile(user=None):
+    """Free-text 'About me' a student writes in Settings (favourite/hated
+    subjects, learning style…). Injected so the AI can personalise replies."""
+    try:
+        from core.services.context import get_current_account
+
+        acct = None
+        if user is not None and getattr(user, "is_authenticated", False):
+            from core.models import Account
+
+            acct = Account.objects.filter(user=user).first()
+        if acct is None:
+            acct = get_current_account()
+        if acct is not None:
+            return (acct.get("AI_PROFILE") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _profile_block(profile):
+    profile = (profile or "").strip()
+    if not profile:
+        return ""
+    return (
+        "\n\nStudent profile (use it to personalise tone, examples, and study "
+        "advice; never expose it verbatim unless asked):\n" + profile[:2000]
+    )
 
 
 def _accuracy_rules():
@@ -230,15 +260,17 @@ def generate_digest(tasks):
     return out[:1500]
 
 
-def chat_reply(message, tasks, history, attachment_kind=None, attachment_data=None, attachment_media=None):
+def chat_reply(message, tasks, history, attachment_kind=None, attachment_data=None, attachment_media=None, profile=""):
     sys = (
         "You are Nexus, a student assistant. You have access to academic tasks and deadlines. "
+        "You remember the earlier turns of this conversation; use them for context. "
         "Answer concisely. For math, show full working."
         + _accuracy_rules()
+        + _profile_block(profile)
         + f"\n\nCurrent open tasks:\n{_fmt_tasks(tasks)}"
     )
     msgs = []
-    for h in (history or [])[-10:]:
+    for h in (history or [])[-20:]:
         if h.get("role") in ("user", "assistant") and h.get("content"):
             msgs.append({"role": h["role"], "content": h["content"]})
     user_content = _build_user_content(message, attachment_kind, attachment_data, attachment_media)
@@ -259,19 +291,25 @@ def chat_reply(message, tasks, history, attachment_kind=None, attachment_data=No
         return f"Error contacting Nexus AI: {e}", model, tier_key
 
 
-def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_media=None):
+def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_media=None, history=None, profile=""):
     sys = (
         "You are a rigorous mathematics tutor. Show every step. Do not skip steps. "
-        "Verify non-trivial results. State the final answer clearly."
+        "Verify non-trivial results. State the final answer clearly. "
+        "You remember earlier turns of this conversation; use them for context."
         + _accuracy_rules()
+        + _profile_block(profile)
     )
-    user_content = _build_user_content(question, attachment_kind, attachment_data, attachment_media)
+    msgs = []
+    for h in (history or [])[-20:]:
+        if h.get("role") in ("user", "assistant") and h.get("content"):
+            msgs.append({"role": h["role"], "content": h["content"]})
+    msgs.append({"role": "user", "content": _build_user_content(question, attachment_kind, attachment_data, attachment_media)})
     model, tier_key = pick_model(question, has_attachment=bool(attachment_kind), force_math=True)
     try:
         reply = _create_message(
             model,
             sys,
-            [{"role": "user", "content": user_content}],
+            msgs,
             max_tokens=4096 if tier_key == TIER_ADVANCED else 2048,
         )
         return reply, model, tier_key
@@ -279,12 +317,19 @@ def math_tutor(question, attachment_kind=None, attachment_data=None, attachment_
         return f"Error contacting math tutor: {e}", model, tier_key
 
 
-def handle_chat(message, history, file=None, user=None):
-    try:
-        hist = json.loads(history) if history else []
-    except json.JSONDecodeError:
-        hist = []
+def _conversation_for(user, conversation_id):
+    """Resolve (or create) the active conversation for an authenticated user."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    conv = None
+    if conversation_id:
+        conv = Conversation.objects.filter(user=user, pk=conversation_id).first()
+    if conv is None:
+        conv = Conversation.objects.create(user=user)
+    return conv
 
+
+def handle_chat(message, history, file=None, user=None, conversation_id=None):
     attachment_kind = attachment_data = attachment_media = None
     if file:
         try:
@@ -295,17 +340,45 @@ def handle_chat(message, history, file=None, user=None):
     if not (message or "").strip() and not attachment_kind:
         return {"response": "Enter a message or attach a file.", "model": None, "tier": None}
 
-    task_q = Task.objects.for_worklist().filter(is_completed=False)
-    if user is not None and getattr(user, "is_authenticated", False):
-        task_q = task_q.filter(user=user)
-    tasks = list(task_q)
-    if _is_math(message) or (attachment_kind and "math" in (message or "").lower()):
-        reply, model, tier_key = math_tutor(message, attachment_kind, attachment_data, attachment_media)
+    owner = user if (user is not None and getattr(user, "is_authenticated", False)) else None
+    conv = _conversation_for(owner, conversation_id)
+
+    # History is authoritative from the DB so memory persists across reloads.
+    if conv is not None:
+        hist = [
+            m.as_dict()
+            for m in ChatMessage.objects.filter(conversation=conv).order_by("id")[:40]
+        ]
     else:
-        reply, model, tier_key = chat_reply(message, tasks, hist, attachment_kind, attachment_data, attachment_media)
+        try:
+            hist = json.loads(history) if history else []
+        except json.JSONDecodeError:
+            hist = []
+
+    task_q = Task.objects.for_worklist().filter(is_completed=False)
+    if owner is not None:
+        task_q = task_q.filter(user=owner)
+    tasks = list(task_q)
+    profile = student_profile(owner)
+    if _is_math(message) or (attachment_kind and "math" in (message or "").lower()):
+        reply, model, tier_key = math_tutor(
+            message, attachment_kind, attachment_data, attachment_media, history=hist, profile=profile
+        )
+    else:
+        reply, model, tier_key = chat_reply(
+            message, tasks, hist, attachment_kind, attachment_data, attachment_media, profile=profile
+        )
 
     user_line = message or f"[attachment: {file.name if file else 'file'}]"
-    owner = user if (user is not None and getattr(user, "is_authenticated", False)) else None
-    ChatMessage.objects.create(user=owner, role="user", content=user_line)
-    ChatMessage.objects.create(user=owner, role="assistant", content=reply)
-    return {"response": reply, "model": model, "tier": tier_label(model, tier_key)}
+    ChatMessage.objects.create(user=owner, conversation=conv, role="user", content=user_line)
+    ChatMessage.objects.create(user=owner, conversation=conv, role="assistant", content=reply)
+    if conv is not None:
+        if (not conv.title) or conv.title == "New chat":
+            conv.title = (user_line or "New chat").strip()[:60] or "New chat"
+        conv.save(update_fields=["title", "updated_at"])
+    return {
+        "response": reply,
+        "model": model,
+        "tier": tier_label(model, tier_key),
+        "conversation_id": conv.id if conv else None,
+    }

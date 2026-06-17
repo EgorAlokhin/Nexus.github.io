@@ -38,6 +38,46 @@ GMAIL_QUERY = (
     ")"
 )
 
+# Senders/subjects that look like university admissions, college marketing, or
+# general informational mail. These are useful to *see* but are NOT coursework,
+# so they go to the in-app "Other" notifications feed instead of the dashboard
+# (where they would otherwise spawn a bogus "class").
+UNIVERSITY_MARKERS = (
+    "university", "college", "admission", "admissions", "applicant", "apply now",
+    "common app", "commonapp", "undergraduate", "scholarship", "open day",
+    "info session", "information session", "webinar", "campus visit", "enrollment",
+    "prospective student", "ucas", "coalition app", "financial aid",
+)
+
+# Strong signals that an email really is actionable coursework.
+COURSEWORK_MARKERS = (
+    "assignment", "homework", "due", "deadline", "exam", "quiz", "midterm",
+    "final", "submission", "turn in", "turned in", "missing work", "rubric",
+    "lab report", "essay due", "project due",
+)
+
+
+def classify_gmail(subject, sender, snippet="", due=None):
+    """Return 'task' for actionable coursework or 'other' for informational mail.
+
+    University/college admissions and general info mail are routed to 'other' so
+    they show up as notifications rather than dashboard tasks/classes.
+    """
+    subj = (subject or "").lower()
+    snd = (sender or "").lower()
+    blob = f"{subj} {(snippet or '').lower()}"
+
+    looks_university = any(m in blob or m in snd for m in UNIVERSITY_MARKERS)
+    looks_coursework = bool(due) or any(m in blob for m in COURSEWORK_MARKERS)
+
+    # A university email only counts as a task if it is clearly an assignment
+    # with a concrete deadline; otherwise it is informational.
+    if looks_university and not (due and any(m in blob for m in COURSEWORK_MARKERS)):
+        return "other"
+    if looks_coursework:
+        return "task"
+    return "other"
+
 
 def _extract_due_from_text(*parts):
     text = " ".join(p for p in parts if p)
@@ -93,6 +133,28 @@ def _current_user():
     return a.user if a else None
 
 
+def _clean_sender(sender: str) -> str:
+    m = re.match(r"\s*\"?([^\"<]+?)\"?\s*<", sender or "")
+    if m:
+        return m.group(1).strip()
+    return (sender or "").strip()
+
+
+def _notify_other_email(user, msg_id, subject, sender, snippet):
+    if user is None:
+        return
+    from core.services.notifications import notify
+
+    notify(
+        user,
+        category="other",
+        title=subject or "(no subject)",
+        body=f"From {_clean_sender(sender)}\n\n{(snippet or '').strip()}"[:1000],
+        source="gmail",
+        dedupe_key=f"gmail:{msg_id}",
+    )
+
+
 def _purge_junk_gmail(user=None):
     if user is None:
         user = _current_user()
@@ -132,8 +194,14 @@ def sync_gmail():
         snippet = full.get("snippet", "")
         if not is_relevant_gmail(subject, sender, snippet):
             continue
-        seen_ids.add(m["id"])
         due = _extract_due_from_text(subject, snippet)
+        kind = classify_gmail(subject, sender, snippet, due)
+        if kind == "other":
+            # Informational / university mail: notify but keep it off the
+            # dashboard so it never creates a phantom class.
+            _notify_other_email(owner, m["id"], subject, sender, snippet)
+            continue
+        seen_ids.add(m["id"])
         upsert_task(
             source="gmail",
             external_id=m["id"],

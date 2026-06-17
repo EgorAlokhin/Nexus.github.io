@@ -205,6 +205,9 @@ def sync_classroom():
             txt = a.get("text", "")
             ann_id = f"{cid}:ann:{a['id']}"
             seen_ids.add(ann_id)
+            is_new = not Task.objects.filter(
+                user=owner, source="classroom", external_id=ann_id
+            ).exists()
             upsert_task(
                 source="classroom",
                 external_id=ann_id,
@@ -214,6 +217,21 @@ def sync_classroom():
                 course_name=cname,
                 is_completed=False,
             )
+            if is_new and owner is not None:
+                try:
+                    from core.services.notifications import notify
+
+                    notify(
+                        owner,
+                        category="announcement",
+                        title=f"{cname}: new announcement",
+                        body=txt[:1000],
+                        source="classroom",
+                        link="/announcements",
+                        dedupe_key=ann_id,
+                    )
+                except Exception:
+                    pass
             count += 1
 
     for t in Task.objects.filter(user=owner, source="classroom"):

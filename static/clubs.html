@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus / Clubs</title>
+<script>document.documentElement.setAttribute('data-theme', localStorage.getItem('nexus-theme') || 'light');
+document.documentElement.setAttribute('data-skin', localStorage.getItem('nexus-skin') || 'fresh');</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="sidebar" id="sidebar"></div>
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">NEXUS / CLUBS</div>
+    <a class="btn" href="/community">Community</a>
+  </div>
+
+  <div class="settings-row" id="club-admin-bar" hidden>
+    <div class="row-head">
+      <div class="muted">Administrators create and manage every club.</div>
+      <button type="button" class="btn" id="club-create-btn">Create club</button>
+    </div>
+  </div>
+
+  <div id="club-manage-wrap" hidden>
+    <div class="section-h">CLUBS YOU MANAGE</div>
+    <div class="club-grid" id="club-manage"></div>
+  </div>
+
+  <div class="section-h">YOUR CLUBS</div>
+  <div class="club-grid" id="club-joined"></div>
+
+  <div class="section-h">ALL CLUBS</div>
+  <div class="club-grid" id="club-all"></div>
+</div>
+<script src="/static/app.js?v=25"></script>
+<script>initClubs();</script>
+</body>
+</html>

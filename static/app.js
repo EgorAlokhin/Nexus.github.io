@@ -4,8 +4,9 @@ const SKIN_KEY = "nexus-skin";
 function initTheme() {
   const t = localStorage.getItem(THEME_KEY) || "light";
   document.documentElement.setAttribute("data-theme", t);
-  const skin = localStorage.getItem(SKIN_KEY) || "fresh";
-  document.documentElement.setAttribute("data-skin", skin);
+  // Single look ("fresh") — the old "classic" skin has been removed.
+  document.documentElement.setAttribute("data-skin", "fresh");
+  localStorage.setItem(SKIN_KEY, "fresh");
 }
 function toggleTheme() {
   const cur = document.documentElement.getAttribute("data-theme");
@@ -15,21 +16,13 @@ function toggleTheme() {
   const btn = document.getElementById("theme-btn");
   if (btn) btn.textContent = next === "dark" ? "Light" : "Dark";
 }
-function currentSkin() {
-  return document.documentElement.getAttribute("data-skin") || "fresh";
-}
-function toggleSkin() {
-  const next = currentSkin() === "fresh" ? "classic" : "fresh";
-  document.documentElement.setAttribute("data-skin", next);
-  localStorage.setItem(SKIN_KEY, next);
-  const btn = document.getElementById("skin-btn");
-  if (btn) btn.textContent = next === "fresh" ? "Classic look" : "Fresh look";
-}
+function currentSkin() { return "fresh"; }
+function toggleSkin() { /* removed: single look */ }
 initTheme();
 
 const NAV = [["/", "Dashboard"], ["/calendar", "Calendar"], ["/library", "Library"], ["/materials", "Materials"],
-  ["/announcements", "Announcements"], ["/completed", "Completed"], ["/chat", "Chat"], ["/notifications", "Notifications"],
-  ["/account", "Account"], ["/settings", "Settings"]];
+  ["/announcements", "Announcements"], ["/community", "Community"], ["/completed", "Completed"], ["/chat", "Chat"],
+  ["/notifications", "Notifications"], ["/settings", "Settings"]];
 const CAL_PREVIEW = 3;
 
 const SOURCE_LABELS = {
@@ -67,15 +60,44 @@ function ensureNavChrome() {
 function toggleNav() { document.body.classList.toggle("nav-open"); }
 function closeNav() { document.body.classList.remove("nav-open"); }
 
+function navLinkHtml(href, name, active) {
+  const isActive = href === active;
+  const badge = href === "/notifications"
+    ? `<span class="nav-badge" id="nav-unread" hidden></span>` : "";
+  return `<a href="${href}" class="${isActive ? "active" : ""}" onclick="closeNav()">` +
+    `<span>${name}</span>${badge}</a>`;
+}
+
+// ----- Sidebar customization (per-device order + hidden tabs) -----
+const NAV_ORDER_KEY = "nexus-nav-order";
+const NAV_HIDDEN_KEY = "nexus-nav-hidden";
+const NAV_LOCKED = new Set(["/settings"]); // never hideable (avoid lockout)
+function navMap() { const m = {}; NAV.forEach(([h, n]) => (m[h] = n)); return m; }
+function navOrder() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) || "[]"); } catch (e) { saved = []; }
+  const valid = new Set(NAV.map(x => x[0]));
+  const order = (saved || []).filter(h => valid.has(h));
+  NAV.forEach(([h]) => { if (!order.includes(h)) order.push(h); });
+  return order;
+}
+function navHidden() {
+  let h = [];
+  try { h = JSON.parse(localStorage.getItem(NAV_HIDDEN_KEY) || "[]"); } catch (e) { h = []; }
+  return new Set((h || []).filter(x => !NAV_LOCKED.has(x)));
+}
+function setNavOrder(order) { localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(order)); }
+function setNavHidden(set) { localStorage.setItem(NAV_HIDDEN_KEY, JSON.stringify([...set])); }
 function renderSidebar(active) {
   const el = document.getElementById("sidebar");
   if (!el) return;
   ensureNavChrome();
   const cur = document.documentElement.getAttribute("data-theme");
   const label = cur === "dark" ? "Light" : "Dark";
-  const links = NAV.map(([href, name]) =>
-    `<a href="${href}" class="${href === active ? "active" : ""}" onclick="closeNav()">${name}</a>`).join("");
-  el.innerHTML = `<div class="brand">NEXUS</div><nav>${links}</nav>` +
+  const m = navMap();
+  const hidden = navHidden();
+  const links = navOrder().filter(h => !hidden.has(h)).map(h => navLinkHtml(h, m[h], active)).join("");
+  el.innerHTML = `<div class="brand">NEXUS</div><nav id="sidebar-nav">${links}</nav>` +
     `<div class="sidebar-footer">` +
       `<div class="acct-line" id="sidebar-acct"></div>` +
       `<div class="sidebar-controls">` +
@@ -83,17 +105,41 @@ function renderSidebar(active) {
         `<a class="btn" href="/logout">Sign out</a>` +
       `</div>` +
     `</div>`;
-  loadSidebarAccount();
+  loadSidebarAccount(active);
+  refreshNavUnread();
 }
-async function loadSidebarAccount() {
+async function loadSidebarAccount(active) {
   try {
     const a = await getJSON("/api/account");
     const el = document.getElementById("sidebar-acct");
-    if (!el) return;
-    const who = (a && (a.email || a.username)) || "";
-    el.textContent = who;
-    el.title = who;
+    if (el) {
+      const who = (a && (a.email || a.username)) || "";
+      el.textContent = who;
+      el.title = who;
+    }
+    if (a && a.is_admin) {
+      const nav = document.getElementById("sidebar-nav");
+      if (nav && !document.getElementById("nav-platform")) {
+        const link = document.createElement("a");
+        link.id = "nav-platform";
+        link.href = "/platform-config";
+        link.className = active === "/platform-config" ? "active" : "";
+        link.setAttribute("onclick", "closeNav()");
+        link.innerHTML = "<span>Platform Config</span>";
+        nav.appendChild(link);
+      }
+    }
   } catch (e) { /* not signed in */ }
+}
+async function refreshNavUnread() {
+  try {
+    const r = await getJSON("/api/notifications/unread");
+    const badge = document.getElementById("nav-unread");
+    if (!badge) return;
+    const n = (r && r.count) || 0;
+    if (n > 0) { badge.textContent = n > 99 ? "99+" : n; badge.hidden = false; }
+    else { badge.hidden = true; }
+  } catch (e) { /* ignore */ }
 }
 
 async function getJSON(url) { const r = await fetch(url); return r.json(); }
@@ -201,11 +247,12 @@ function courseCard(c) {
         `</div>`).join("")
     : '<div class="muted course-empty">No open tasks. Nice.</div>';
   return `<details class="course-card">` +
-    `<summary class="course-head">` +
-      `<span class="course-name">${esc(c.name)}</span>` +
+    `<summary class="course-head" title="${esc(c.name)}">` +
+      `<span class="course-name" title="${esc(c.name)}">${esc(c.name)}</span>` +
       `<span class="course-head-right">${grade}` +
       `<span class="course-open">${c.open_count} open</span></span>` +
     `</summary>` +
+    `<div class="course-fullname">${esc(c.name)}</div>` +
     `<div class="course-body">` +
       `<div class="course-meta">${srcDots}` +
         (c.grade_source ? `<span class="muted"> · grade via ${esc(c.grade_source)}</span>` : "") +
@@ -420,8 +467,112 @@ function _assignCalTasksByDay(tasks, viewYear, viewMonth) {
   return byDay;
 }
 
+// ---------- SCHOOL CALENDAR (fixed 2026/27 dates + colour map) ----------
+const CAL_CATS = {
+  na:   { label: "Non-Attendance", color: "#dc2626" },
+  hol:  { label: "Holidays / Breaks", color: "#ca8a04" },
+  imp:  { label: "Important School Dates", color: "#2563eb" },
+  test: { label: "Testing Dates", color: "#ea580c" },
+  evt:  { label: "Student Events", color: "#9333ea" },
+};
+const CAL_CAT_PRIORITY = ["na", "hol", "test", "imp", "evt"];
+// [startISO, endISO|null, category, label]
+const SCHOOL_EVENTS_RAW = [
+  ["2026-09-01", null, "imp", "First Day of School for Students"],
+  ["2026-09-03", null, "imp", "Picture Day (Studio)"],
+  ["2026-09-10", null, "imp", "Parents Back to School Night"],
+  ["2026-09-11", null, "hol", "La Diada (No School)"],
+  ["2026-09-21", "2026-09-25", "test", "Fall MAP Testing Week"],
+  ["2026-09-22", null, "evt", "Extracurricular & Athletics Fair"],
+  ["2026-09-24", null, "hol", "La Mercé (No School)"],
+  ["2026-09-29", null, "evt", "Grades 6-8 Movie Night"],
+  ["2026-09-30", null, "evt", "Grades 9-10 Movie Night"],
+  ["2026-10-01", null, "evt", "Grades 11-12 Movie Night"],
+  ["2026-10-02", null, "evt", "Homecoming Dance & Pep Rally (Modified Schedule)"],
+  ["2026-10-12", null, "hol", "La Hispanidad (No School)"],
+  ["2026-10-30", null, "evt", "Halloween Party (Modified Schedule)"],
+  ["2026-11-05", "2026-11-06", "na", "Student Parent Teacher Conferences (No School)"],
+  ["2026-11-26", null, "hol", "Thanksgiving — Dinner at BHS 5-8 PM (No School)"],
+  ["2026-11-27", null, "hol", "Thanksgiving (No School)"],
+  ["2026-12-07", "2026-12-08", "hol", "La Inmaculada (No School)"],
+  ["2026-12-18", null, "imp", "Half Day (ends 12 PM) · Winter Party 12-1 PM"],
+  ["2026-12-21", "2026-12-31", "hol", "Winter Break (No School)"],
+  ["2027-01-01", "2027-01-06", "hol", "Winter Break (No School)"],
+  ["2027-01-07", null, "imp", "First Day Back After Winter Break"],
+  ["2027-01-22", null, "imp", "Last Day to Submit Work"],
+  ["2027-01-25", "2027-01-27", "test", "Final Exams (Modified Schedule)"],
+  ["2027-01-28", "2027-01-29", "na", "Make-Up Exams & Professional Development (No School)"],
+  ["2027-02-01", null, "imp", "First Day of New Semester"],
+  ["2027-02-12", null, "evt", "Carnival Celebration at School"],
+  ["2027-02-22", "2027-02-26", "hol", "Ski Week / Mid Winter Break (No School)"],
+  ["2027-03-01", null, "hol", "Mid Winter Break (No School)"],
+  ["2027-03-05", null, "evt", "Spring Dance"],
+  ["2027-03-18", "2027-03-30", "hol", "Spring Break (No School)"],
+  ["2027-04-12", "2027-04-14", "test", "Mock AP Exams"],
+  ["2027-04-15", "2027-04-16", "na", "Student Parent Teacher Conferences (No School)"],
+  ["2027-04-23", null, "evt", "Sant Jordi School Celebration"],
+  ["2027-05-03", "2027-05-07", "imp", "Middle School Exploration Week"],
+  ["2027-05-03", "2027-05-21", "test", "AP Examinations"],
+  ["2027-05-17", null, "hol", "Pentecost (No School)"],
+  ["2027-05-21", null, "imp", "Last Day of AP Classes"],
+  ["2027-05-24", "2027-05-28", "test", "Spring MAP Testing Week"],
+  ["2027-06-08", null, "imp", "Grade 12 Last Day of Classes"],
+  ["2027-06-09", "2027-06-11", "test", "Grade 12 Final Exams"],
+  ["2027-06-11", null, "imp", "Gr 12 Last Day of School · Gr 6-11 Last Day of Classes"],
+  ["2027-06-14", "2027-06-16", "test", "Final Exams Grades 6-11"],
+  ["2027-06-16", null, "imp", "Grades 6-11 Last Day of School"],
+  ["2027-06-17", "2027-06-18", "na", "Make-Up Exams & Professional Development (No Classes)"],
+];
+let _schoolEvents = null;
+function _isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function schoolEvents() {
+  if (_schoolEvents) return _schoolEvents;
+  const map = {};
+  const add = (iso, cat, label) => { (map[iso] = map[iso] || []).push({ cat, label }); };
+  for (const [start, end, cat, label] of SCHOOL_EVENTS_RAW) {
+    if (!end) { add(start, cat, label); continue; }
+    let d = new Date(start + "T00:00:00");
+    const last = new Date(end + "T00:00:00");
+    while (d <= last) { add(_isoOf(d), cat, label); d.setDate(d.getDate() + 1); }
+  }
+  _schoolEvents = map;
+  return map;
+}
+function _tintCat(events) {
+  for (const c of CAL_CAT_PRIORITY) if (events.some(e => e.cat === c)) return c;
+  return "";
+}
+function renderCalLegend() {
+  const el = document.getElementById("cal-legend");
+  if (!el) return;
+  el.innerHTML = Object.entries(CAL_CATS).map(([k, v]) =>
+    `<span class="cal-legend-item"><span class="cal-legend-dot cat-${k}"></span>${esc(v.label)}</span>`).join("") +
+    `<span class="cal-legend-item"><span class="cal-legend-dot cal-legend-weekend"></span>Weekend</span>`;
+}
+
+async function showYearOverview() {
+  let data = {};
+  try { data = await getJSON("/api/calendar/overview"); } catch (e) {}
+  if (!data.available) {
+    showInfoModal("Year overview", "No year-at-a-glance calendar has been uploaded yet. An administrator can add one on Platform Config.");
+    return;
+  }
+  const isPdf = (data.file_url || "").toLowerCase().endsWith(".pdf") || data.file_url.includes("overview.pdf");
+  const inner = isPdf
+    ? `<iframe src="${esc(data.file_url)}" style="width:100%;height:70vh;border:1px solid var(--border)"></iframe>`
+    : `<img src="${esc(data.file_url)}" alt="Year overview" style="max-width:100%;border:1px solid var(--border)">`;
+  const back = _overlay(
+    `<h3 class="modal-title">Year at a glance</h3>` + inner +
+    `<div class="modal-actions"><a class="btn" href="${esc(data.file_url)}" target="_blank" rel="noopener">Open full size</a>` +
+    `<button type="button" class="btn" data-ok>Close</button></div>`);
+  back.querySelector("[data-ok]").onclick = () => back.remove();
+}
+
 async function initCalendar() {
   renderSidebar("/calendar");
+  renderCalLegend();
   _calTasks = openTasksOnly(await getJSON("/api/tasks?completed=false"));
   renderCalendar();
 }
@@ -493,13 +644,18 @@ function showUndatedPanel() {
 
 function showCalDay(y, m, day) {
   const items = _calByDay[day] || [];
+  const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const events = (schoolEvents()[iso] || []);
   const title = document.getElementById("detail-title");
   const hint = document.getElementById("detail-hint");
   const body = document.getElementById("detail-body");
   const collapseBtn = document.getElementById("detail-collapse-btn");
   if (title) title.textContent = new Date(y, m, day).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  if (hint) hint.textContent = `${items.length} task${items.length === 1 ? "" : "s"}`;
-  if (body) body.innerHTML = items.length ? items.map(_taskDetailHtml).join("") : '<div class="muted">No tasks this day.</div>';
+  if (hint) hint.textContent = `${events.length} school event${events.length === 1 ? "" : "s"} · ${items.length} task${items.length === 1 ? "" : "s"}`;
+  const evHtml = events.map(e =>
+    `<div class="cal-detail-item"><div class="cat-text cat-${e.cat}">${esc(CAL_CATS[e.cat].label)}</div>` +
+    `<strong>${esc(e.label)}</strong></div>`).join("");
+  if (body) body.innerHTML = (evHtml || "") + (items.length ? items.map(_taskDetailHtml).join("") : (evHtml ? "" : '<div class="muted">Nothing this day.</div>'));
   _calPanelMode = "day";
   if (collapseBtn) collapseBtn.hidden = false;
   _updateUndatedPanelBtn();
@@ -534,10 +690,17 @@ function renderCalendar() {
   _calByDay = _assignCalTasksByDay(_calTasks, y, m);
   renderOverdueStrip(_calTasks);
   renderUndatedStrip(_calTasks);
+  const evMap = schoolEvents();
   let cells = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => `<div class="dow">${d}</div>`).join("");
   for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
   for (let day = 1; day <= days; day++) {
+    const iso = `${y}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const events = evMap[iso] || [];
+    const dow = new Date(y, m, day).getDay();
+    const weekend = dow === 0 || dow === 6;
     const all = _calByDay[day] || [];
+    const evHtml = events.map(e =>
+      `<span class="cal-ev cat-${e.cat}" title="${esc(e.label)}" onclick="event.stopPropagation();showCalDay(${y},${m},${day})">${esc(e.label)}</span>`).join("");
     const busy = all.length > CAL_PREVIEW;
     const preview = all.slice(0, CAL_PREVIEW);
     const taskHtml = preview.map(_calTaskHtml).join("");
@@ -545,9 +708,12 @@ function renderCalendar() {
       ? `<button type="button" class="cal-more" onclick="event.stopPropagation();showCalDay(${y},${m},${day})">+${all.length - CAL_PREVIEW} more</button>`
       : "";
     const isToday = y === today.getFullYear() && m === today.getMonth() && day === today.getDate();
-    const cellClass = "cal-cell" + (busy ? " cal-busy" : "") + (isToday ? " cal-today" : "");
-    const openDay = busy ? `onclick="showCalDay(${y},${m},${day})"` : "";
-    cells += `<div class="${cellClass}" ${openDay}><span class="num">${day}</span>${taskHtml}${more}</div>`;
+    const tint = _tintCat(events);
+    const clickable = busy || events.length;
+    const cellClass = "cal-cell" + (busy ? " cal-busy" : "") + (isToday ? " cal-today" : "") +
+      (weekend ? " cal-weekend" : "") + (tint ? " cat-" + tint : "");
+    const openDay = clickable ? `onclick="showCalDay(${y},${m},${day})"` : "";
+    cells += `<div class="${cellClass}" ${openDay}><span class="num">${day}</span>${evHtml}${taskHtml}${more}</div>`;
   }
   document.getElementById("cal-grid").innerHTML = cells;
   document.getElementById("cal-title").textContent =
@@ -621,7 +787,10 @@ function renderAnnouncements() {
 
 // ---------- CHAT ----------
 let _history = [];
-function initChat() {
+let _convId = null;
+let _convs = [];
+
+async function initChat() {
   renderSidebar("/chat");
   document.getElementById("send-btn").onclick = sendChat;
   document.getElementById("chat-text").addEventListener("keydown", e => {
@@ -637,15 +806,77 @@ function initChat() {
   document.querySelectorAll(".quick button").forEach(b => b.onclick = () => {
     document.getElementById("chat-text").value = b.textContent; sendChat();
   });
-  const welcome = document.querySelector("#messages .msg.assistant");
-  if (welcome) {
-    welcome.classList.add("chat-md");
-    welcome.innerHTML = renderChatMarkdown(
-      "Nexus ready. Attach a file or ask about deadlines, workload, or math. " +
-      "Model: **GPT-OSS (quick)** → **GPT-OSS (deep)** → **GLM-4.7 (advanced)**."
-    );
-    typesetChat(welcome);
-  }
+  const newBtn = document.getElementById("new-chat-btn");
+  if (newBtn) newBtn.onclick = newConversation;
+  await loadConversations();
+  // Open the most recent conversation, or start fresh.
+  if (_convs.length) await openConversation(_convs[0].id);
+  else resetChatView();
+}
+
+function resetChatView() {
+  _history = [];
+  const box = document.getElementById("messages");
+  if (box) box.innerHTML = "";
+  const welcome = document.createElement("div");
+  welcome.className = "msg assistant chat-md";
+  welcome.innerHTML = renderChatMarkdown(
+    "Nexus ready — I remember this conversation. Ask about deadlines, workload, or math. " +
+    "Set your profile in **Settings → AI & Profile** so I can tailor help."
+  );
+  typesetChat(welcome);
+  if (box) box.appendChild(welcome);
+}
+
+async function loadConversations() {
+  try {
+    const r = await getJSON("/api/chat/conversations");
+    _convs = r.conversations || [];
+  } catch (e) { _convs = []; }
+  renderConversations();
+}
+
+function renderConversations() {
+  const el = document.getElementById("conv-list");
+  if (!el) return;
+  if (!_convs.length) { el.innerHTML = `<div class="muted">No conversations yet.</div>`; return; }
+  el.innerHTML = _convs.map(c =>
+    `<div class="conv-item${c.id === _convId ? " active" : ""}" onclick="openConversation(${c.id})">` +
+    `<span class="conv-title">${esc(c.title || "New chat")}</span>` +
+    `<button type="button" class="link-btn conv-del" onclick="event.stopPropagation();deleteConversation(${c.id})">✕</button>` +
+    `</div>`).join("");
+}
+
+async function newConversation() {
+  try {
+    const r = await postJSON("/api/chat/conversations/new");
+    _convId = r.conversation ? r.conversation.id : null;
+    await loadConversations();
+    resetChatView();
+  } catch (e) { /* ignore */ }
+}
+
+async function openConversation(id) {
+  _convId = id;
+  renderConversations();
+  const box = document.getElementById("messages");
+  if (box) box.innerHTML = "";
+  _history = [];
+  try {
+    const r = await getJSON(`/api/chat/conversations/${id}`);
+    const msgs = r.messages || [];
+    if (!msgs.length) { resetChatView(); return; }
+    msgs.forEach(m => addMsg(m.role, m.content));
+  } catch (e) { resetChatView(); }
+}
+
+async function deleteConversation(id) {
+  if (!confirm("Delete this conversation?")) return;
+  try { await postJSON(`/api/chat/conversations/${id}/delete`); } catch (e) {}
+  if (_convId === id) _convId = null;
+  await loadConversations();
+  if (_convs.length) await openConversation(_convs[0].id);
+  else { _convId = null; resetChatView(); }
 }
 
 function renderChatMarkdown(text) {
@@ -719,6 +950,7 @@ async function sendChat() {
     const fd = new FormData();
     fd.append("message", text);
     fd.append("history", JSON.stringify(hist));
+    if (_convId) fd.append("conversation_id", _convId);
     if (file) fd.append("file", file);
     const r = await fetch("/ai/chat", { method: "POST", body: fd });
     if (!r.ok) throw new Error(r.status + " " + r.statusText);
@@ -728,6 +960,10 @@ async function sendChat() {
     const badge = document.getElementById("model-badge");
     if (badge && data.tier) badge.textContent = "model: " + data.tier;
     if (fileInp) { fileInp.value = ""; const fn = document.getElementById("file-name"); if (fn) fn.textContent = ""; }
+    if (data.conversation_id && data.conversation_id !== _convId) {
+      _convId = data.conversation_id;
+    }
+    if (typeof loadConversations === "function") loadConversations();
   } catch (e) {
     thinking.remove();
     addMsg("assistant", "Error: " + e);
@@ -866,19 +1102,8 @@ async function initAccount() {
   const tb = document.getElementById("test-btn");
   if (tb) tb.onclick = testLogins;
 
-  const adminSection = document.getElementById("admin-creds-section");
-  const adminNote = document.getElementById("admin-creds-note");
-  if (adminSection) {
-    if (account.is_admin) {
-      adminSection.style.display = "block";
-      if (adminNote && account.email) {
-        adminNote.textContent = `Signed in as ${account.email}. Twilio, Cerebras, and Google OAuth app settings below.`;
-      }
-      await initAdminCredentials();
-    } else {
-      adminSection.style.display = "none";
-    }
-  }
+  const adminLink = document.getElementById("admin-platform-link");
+  if (adminLink) adminLink.style.display = account.is_admin ? "block" : "none";
 }
 
 async function initAdminCredentials() {
@@ -973,68 +1198,376 @@ async function testLogins() {
   }
 }
 
-// ---------- SETTINGS ----------
-async function initSettings() {
-  renderSidebar("/settings");
+// ---------- SETTINGS (merged: Connections + Messages + AI/Profile) ----------
+let _setStatus = {};
+let _setAccount = {};
+let _setMsg = {};
+let _setPrefs = {};
+let _settingsTab = "connections";
+
+function _field(key) { return (_loginFields || []).find(f => f.key === key) || {}; }
+function _fieldVal(key) { const f = _field(key); return f.secret ? "" : (f.value || ""); }
+function _fieldPlaceholder(key) { const f = _field(key); return (f.secret && f.value) ? "(saved — leave blank to keep)" : ""; }
+
+function _settingsBanner() {
   const params = new URLSearchParams(location.search);
   const banner = document.getElementById("oauth-banner");
-  if (banner) {
-    if (params.get("oauth") === "ok" && params.get("scopes") !== "missing") {
-      banner.style.display = "block";
-      banner.className = "oauth-banner ok";
-      banner.textContent = "Google connected successfully.";
-    } else if (params.get("oauth") === "ok" && params.get("scopes") === "missing") {
-      banner.style.display = "block";
-      banner.className = "oauth-banner err";
-      banner.textContent =
-        "Google connected, but some Classroom permissions were not granted. Disconnect, then Connect again and accept ALL checkboxes.";
-    } else if (params.get("oauth_error")) {
-      banner.style.display = "block";
-      banner.className = "oauth-banner err";
-      banner.textContent = "Google OAuth failed: " + params.get("oauth_error");
-    }
+  if (!banner) return;
+  if (params.get("oauth") === "ok" && params.get("scopes") !== "missing") {
+    banner.style.display = "block"; banner.className = "oauth-banner ok";
+    banner.textContent = "Google connected successfully.";
+  } else if (params.get("oauth") === "ok" && params.get("scopes") === "missing") {
+    banner.style.display = "block"; banner.className = "oauth-banner err";
+    banner.textContent = "Google connected, but some Classroom permissions were not granted. Disconnect, then Connect again and accept ALL checkboxes.";
+  } else if (params.get("oauth_error")) {
+    banner.style.display = "block"; banner.className = "oauth-banner err";
+    banner.textContent = "Google OAuth failed: " + params.get("oauth_error");
+  } else if (_setStatus.google_needs_reconnect) {
+    banner.style.display = "block"; banner.className = "oauth-banner err";
+    banner.textContent = "Missing Google Classroom permissions. Disconnect Google, then Connect again and accept ALL permission checkboxes.";
   }
-  const [s, account] = await Promise.all([
+}
+
+async function initSettings() {
+  renderSidebar("/settings");
+  const [s, account, sett, msg, prefs] = await Promise.all([
     getJSON("/api/status"),
     getJSON("/api/account"),
+    getJSON("/api/settings"),
+    getJSON("/api/messaging/status"),
+    getJSON("/api/notifications/prefs"),
   ]);
-  if (banner && s.google_needs_reconnect && params.get("oauth") !== "ok") {
-    banner.style.display = "block";
-    banner.className = "oauth-banner err";
-    banner.textContent =
-      "Missing Google Classroom permissions. Disconnect Google, then Connect again and accept ALL permission checkboxes.";
+  _setStatus = s || {}; _setAccount = account || {};
+  _loginFields = sett.fields || []; _setMsg = msg || {}; _setPrefs = prefs || {};
+  _settingsBanner();
+  document.querySelectorAll("[data-settings-tab]").forEach(btn => {
+    btn.onclick = () => {
+      _settingsTab = btn.dataset.settingsTab;
+      document.querySelectorAll("[data-settings-tab]").forEach(b =>
+        b.classList.toggle("active", b.dataset.settingsTab === _settingsTab));
+      renderSettingsTab();
+    };
+  });
+  renderSettingsTab();
+}
+
+function renderSettingsTab() {
+  const root = document.getElementById("settings-root");
+  if (!root) return;
+  if (_settingsTab === "messages") root.innerHTML = settingsMessagesHtml();
+  else if (_settingsTab === "profile") root.innerHTML = settingsProfileHtml();
+  else if (_settingsTab === "sidebar") root.innerHTML = settingsSidebarHtml();
+  else if (_settingsTab === "support") root.innerHTML = settingsSupportHtml();
+  else root.innerHTML = settingsConnectionsHtml();
+  wireSettingsTab();
+}
+
+// ----- Sidebar customization tab -----
+function settingsSidebarHtml() {
+  const m = navMap(); const hidden = navHidden(); const order = navOrder();
+  const rows = order.map(h => {
+    const locked = NAV_LOCKED.has(h);
+    return `<li class="nav-edit-item" draggable="true" data-href="${esc(h)}">` +
+      `<span class="nav-drag" aria-hidden="true">⠿</span>` +
+      `<span class="nav-edit-name">${esc(m[h])}</span>` +
+      (locked
+        ? `<span class="muted nav-edit-lock">always shown</span>`
+        : `<label class="nav-edit-hide"><input type="checkbox" data-hide="${esc(h)}" ${hidden.has(h) ? "" : "checked"}> visible</label>`) +
+      `</li>`;
+  }).join("");
+  return `<div class="section-h">SIDEBAR</div>` +
+    `<p class="muted">Drag the handle to reorder tabs. Untick to hide one. Saved on this device.</p>` +
+    `<ul class="nav-edit-list" id="nav-edit-list">${rows}</ul>` +
+    `<div class="login-actions"><button type="button" class="btn" onclick="resetSidebar()">Reset to default</button></div>`;
+}
+function _dragAfter(list, y) {
+  const els = [...list.querySelectorAll(".nav-edit-item:not(.dragging)")];
+  let best = { offset: -Infinity, el: null };
+  for (const child of els) {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > best.offset) best = { offset, el: child };
   }
-  const g = s.gmail && s.gmail.connected;
-  const gs = document.getElementById("google-status");
-  const ge = document.getElementById("google-email");
-  const connectBtn = document.getElementById("google-connect-btn");
-  const disconnectBtn = document.getElementById("google-disconnect-btn");
-  if (gs) {
-    gs.innerHTML = g
-      ? '<span class="dot on">●</span> Connected'
-      : '<span class="dot off">○</span> Not connected';
-  }
-  if (ge) {
-    if (account.email) {
-      ge.textContent = "Signed in as " + account.email
-        + (account.google_missing_scopes && account.google_missing_scopes.length
-          ? " · missing permissions — disconnect and reconnect"
-          : "");
-    } else {
-      ge.textContent = g
-        ? "Connected (email unknown — try Disconnect, then Connect again)"
-        : "Not signed in. Each Google account must be added as a test user in Google Cloud Console while the app is in Testing mode.";
-    }
-  }
-  if (connectBtn) connectBtn.textContent = g ? "Switch Google account" : "Connect Google";
-  if (disconnectBtn) disconnectBtn.hidden = !g;
-  ["gmail", "classroom", "buzz", "veracross"].forEach(k => {
-    const c = s[k] || {};
-    const el = document.getElementById("st-" + k);
-    if (el) el.innerHTML = `${c.connected ? '<span class="dot on">●</span>' : '<span class="dot off">○</span>'} ` +
-      `${c.count || 0} tasks · sync: ${c.last_sync ? fmtDate(c.last_sync) : "never"}`;
+  return best.el;
+}
+function persistNavFromDom() {
+  const list = document.getElementById("nav-edit-list");
+  if (!list) return;
+  const order = [...list.querySelectorAll(".nav-edit-item")].map(li => li.getAttribute("data-href"));
+  setNavOrder(order);
+  renderSidebar("/settings");
+}
+function resetSidebar() {
+  localStorage.removeItem(NAV_ORDER_KEY);
+  localStorage.removeItem(NAV_HIDDEN_KEY);
+  renderSidebar("/settings");
+  renderSettingsTab();
+}
+function wireSidebarEditor() {
+  const list = document.getElementById("nav-edit-list");
+  if (!list) return;
+  let dragEl = null;
+  list.querySelectorAll(".nav-edit-item").forEach(li => {
+    li.addEventListener("dragstart", () => { dragEl = li; li.classList.add("dragging"); });
+    li.addEventListener("dragend", () => { li.classList.remove("dragging"); dragEl = null; persistNavFromDom(); });
+  });
+  list.addEventListener("dragover", e => {
+    e.preventDefault();
+    if (!dragEl) return;
+    const after = _dragAfter(list, e.clientY);
+    if (after == null) list.appendChild(dragEl);
+    else list.insertBefore(dragEl, after);
+  });
+  list.querySelectorAll("[data-hide]").forEach(cb => cb.onchange = () => {
+    const hidden = navHidden();
+    const h = cb.getAttribute("data-hide");
+    if (cb.checked) hidden.delete(h); else hidden.add(h);
+    setNavHidden(hidden);
+    renderSidebar("/settings");
   });
 }
+
+// ----- Support tab -----
+const SUPPORT_FAQ = [
+  ["How do I connect my school accounts?", "Open Settings → Connections. Connect Google for Gmail + Classroom, and enter your Veracross and Accelerate username and password, then press Sync."],
+  ["Why don't I see grades for a class?", "Grades come from Veracross — make sure your Veracross login is saved and synced. Tasks come from Classroom and Accelerate."],
+  ["How do notifications work?", "The Notifications page shows your in-app feed with an unread badge. For SMS, WhatsApp or Telegram reminders, set your channel in Settings → Messages."],
+  ["How do I use Telegram for free instead of SMS?", "In Settings → Messages: create a bot with @BotFather, paste the bot token and your chat ID (from @userinfobot), pick Telegram as your channel, then Send test. It does not use Twilio."],
+  ["How do I join a club?", "Go to Community → Clubs, open a club card and enter the access code given by the club leader or teacher."],
+  ["Does the AI chat remember our conversation?", "Yes — every conversation is saved and listed in Chat. Fill in Settings → AI & Profile so answers are tailored to you."],
+  ["How do I reorder or hide sidebar tabs?", "Settings → Sidebar. Drag to reorder and untick to hide. Settings always stays visible."],
+  ["How is the school calendar colour-coded?", "Calendar shows weekends shaded and official dates coloured: red = non-attendance, yellow = holidays/breaks, blue = important dates, orange = testing, purple = student events. Use ‘Year overview’ for the full-year image."],
+];
+function settingsSupportHtml() {
+  const faq = SUPPORT_FAQ.map(([q, a]) =>
+    `<details class="faq-item"><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("");
+  return `<div class="section-h">SUPPORT · FAQ</div>${faq}` +
+    `<div class="section-h" style="margin-top:20px">DIDN'T FIND AN ANSWER?</div>` +
+    `<p class="muted">Email us — we're happy to help.</p>` +
+    `<div id="support-admins" class="support-emails muted">Loading…</div>`;
+}
+async function loadSupportAdmins() {
+  try {
+    const r = await getJSON("/api/admins");
+    const el = document.getElementById("support-admins");
+    if (!el) return;
+    const list = r.admins || [];
+    el.innerHTML = list.length
+      ? list.map(e => `<a class="btn support-email" href="mailto:${esc(e)}">${esc(e)}</a>`).join("")
+      : "No admin contacts configured yet.";
+  } catch (e) { /* ignore */ }
+}
+
+// ----- Connections -----
+function _connRow(key, label, type) {
+  const t = type || "text";
+  return `<label class="cred-field"><span>${esc(label)}</span>` +
+    `<input data-set="${key}" type="${t}" value="${esc(_fieldVal(key))}" placeholder="${esc(_fieldPlaceholder(key))}" autocomplete="off"></label>`;
+}
+function _statusLine(k) {
+  const c = _setStatus[k] || {};
+  return `${c.connected ? '<span class="dot on">●</span>' : '<span class="dot off">○</span>'} ` +
+    `${c.count || 0} items · sync: ${c.last_sync ? fmtDate(c.last_sync) : "never"}`;
+}
+function settingsConnectionsHtml() {
+  const s = _setStatus, a = _setAccount;
+  const g = s.gmail && s.gmail.connected;
+  const gEmail = a.email
+    ? "Signed in as " + esc(a.email) + ((a.google_missing_scopes && a.google_missing_scopes.length) ? " · missing permissions — reconnect" : "")
+    : (g ? "Connected" : "Not connected. Connect to pull Gmail + Classroom.");
+  return `<div class="section-h">CONNECTIONS</div>` +
+    // Google combined
+    `<div class="settings-row"><div class="row-head">` +
+      `<div><div class="status-name">Google · Gmail + Classroom</div>` +
+      `<div class="muted">${g ? '<span class="dot on">●</span> Connected' : '<span class="dot off">○</span> Not connected'} · ${gEmail}</div>` +
+      `<div class="muted">Gmail: ${_statusLine("gmail")} &nbsp;|&nbsp; Classroom: ${_statusLine("classroom")}</div></div>` +
+      `<div class="row-actions">` +
+        `<a class="btn" href="/auth/google">${g ? "Switch account" : "Connect Google"}</a>` +
+        (g ? `<button type="button" class="btn" onclick="disconnectGoogle()">Disconnect</button>` : "") +
+        `<button type="button" class="btn" id="sync-google-btn" onclick="syncGoogle(this)">Sync Google</button>` +
+      `</div>` +
+    `</div></div>` +
+    // Veracross
+    `<div class="settings-row"><div class="row-head" style="align-items:flex-start">` +
+      `<div style="flex:1;min-width:240px"><div class="status-name src-veracross">Veracross · grades</div>` +
+      `<div class="muted" style="margin-bottom:8px">${_statusLine("veracross")}</div>` +
+      _connRow("VERACROSS_USERNAME", "Veracross username") +
+      _connRow("VERACROSS_PASSWORD", "Veracross password", "password") + `</div>` +
+      `<div class="row-actions"><button type="button" class="btn" onclick="saveConnections(this)">Save</button>` +
+      `<button type="button" class="btn" onclick="syncOne('veracross', this)">Sync</button></div>` +
+    `</div></div>` +
+    // Accelerate / Buzz
+    `<div class="settings-row"><div class="row-head" style="align-items:flex-start">` +
+      `<div style="flex:1;min-width:240px"><div class="status-name src-buzz">Accelerate / Buzz · tasks</div>` +
+      `<div class="muted" style="margin-bottom:8px">${_statusLine("buzz")}</div>` +
+      _connRow("BUZZ_USERNAME", "Accelerate username") +
+      _connRow("BUZZ_PASSWORD", "Accelerate password", "password") + `</div>` +
+      `<div class="row-actions"><button type="button" class="btn" onclick="saveConnections(this)">Save</button>` +
+      `<button type="button" class="btn" onclick="syncOne('buzz', this)">Sync</button></div>` +
+    `</div></div>` +
+    `<div id="conn-status" class="login-status muted"></div>` +
+    // Advanced
+    `<details class="admin-creds"><summary class="muted">Advanced — portal URLs (defaults are pre-filled)</summary>` +
+      `<div class="cred-group" style="margin-top:10px">` +
+      _connRow("VERACROSS_URL", "Veracross portal URL") +
+      _connRow("BUZZ_DOMAIN", "Accelerate / Buzz domain") +
+      `<button type="button" class="btn" onclick="saveConnections(this)">Save advanced</button></div>` +
+    `</details>` +
+    (a.is_admin ? `<div class="settings-row" style="margin-top:14px"><div class="row-head">` +
+      `<div class="muted">Shared server credentials &amp; community controls.</div>` +
+      `<a class="btn" href="/platform-config">Open Platform Config</a></div></div>` : "");
+}
+
+// ----- Messages -----
+function settingsMessagesHtml() {
+  const m = _setMsg, p = _setPrefs;
+  const ch = p.notification_channel || "sms";
+  const opt = (v, lbl) => `<option value="${v}"${ch === v ? " selected" : ""}>${lbl}</option>`;
+  return `<div class="section-h">MESSENGER</div>` +
+    `<div class="settings-row"><div class="muted">` +
+      `Channel readiness — SMS: ${m.sms_ready ? "ready" : "not set"} · WhatsApp: ${m.whatsapp_ready ? "ready" : "not set"} · Telegram: ${m.telegram_ready ? "ready" : "not set"}` +
+    `</div></div>` +
+    `<div class="cred-group">` +
+      _connRow("USER_DISPLAY_NAME", "Your first name (used in messages)") +
+      _connRow("YOUR_PHONE_NUMBER", "Your mobile (E.164, e.g. +34…)") +
+      `<label class="cred-field"><span>Preferred channel</span>` +
+        `<select id="set-channel">${opt("sms", "SMS")}${opt("whatsapp", "WhatsApp")}${opt("telegram", "Telegram (free, recommended)")}</select></label>` +
+      `<div class="muted channel-hint" id="set-channel-hint"></div>` +
+    `</div>` +
+    `<div class="cred-group" id="telegram-group">` +
+      `<div class="section-h">TELEGRAM (direct, no Twilio)</div>` +
+      `<div class="muted" style="margin-bottom:8px">Create a bot with <code>@BotFather</code>, paste the token, then message your bot and put your chat ID below. ` +
+      `Get the chat ID from <code>@userinfobot</code>.</div>` +
+      _connRow("TELEGRAM_BOT_TOKEN", "Telegram bot token", "password") +
+      _connRow("TELEGRAM_CHAT_ID", "Telegram chat ID") +
+    `</div>` +
+    `<div class="cred-group">` +
+      `<div class="section-h">REMINDERS &amp; UPDATES</div>` +
+      `<label class="cred-check"><input type="checkbox" id="chatbot_enabled"${p.chatbot_enabled ? " checked" : ""}> Reply with the AI assistant when I message the bot</label>` +
+      `<label class="cred-check"><input type="checkbox" id="daily_digest_enabled"${p.daily_digest_enabled ? " checked" : ""}> Morning task summary</label>` +
+      `<label class="cred-field"><span>Digest hour (0–23)</span><input type="number" id="daily_digest_hour" min="0" max="23" value="${p.daily_digest_hour ?? 7}"></label>` +
+      `<label class="cred-check"><input type="checkbox" id="reminders_enabled"${p.reminders_enabled ? " checked" : ""}> Reminders before deadlines</label>` +
+      `<label class="cred-field"><span>Remind within (hours)</span><input type="number" id="reminder_hours_before" min="1" max="72" value="${p.reminder_hours_before ?? 2}"></label>` +
+      `<label class="cred-check"><input type="checkbox" id="background_sync_enabled"${p.background_sync_enabled ? " checked" : ""}> Background sync</label>` +
+    `</div>` +
+    `<div class="login-actions">` +
+      `<button type="button" class="btn" onclick="saveMessages(this)">Save</button>` +
+      `<button type="button" class="btn" onclick="testMessage(this)">Send test</button>` +
+    `</div>` +
+    `<div id="msg-status" class="login-status muted"></div>`;
+}
+
+// ----- AI & Profile -----
+function settingsProfileHtml() {
+  return `<div class="section-h">YOUR STUDENT PROFILE</div>` +
+    `<p class="muted">Nexus AI uses this to personalise help — favourite and disliked subjects, learning style, goals, exams coming up. It is private to your account.</p>` +
+    `<div class="cred-group">` +
+      `<label class="cred-field"><span>About you</span>` +
+      `<textarea id="ai-profile" rows="8" placeholder="e.g. I love Physics and Maths, dislike essay writing. I learn best with worked examples. Targeting a 5 in AP Calculus. Native Spanish speaker.">${esc(_fieldVal("AI_PROFILE"))}</textarea></label>` +
+    `</div>` +
+    `<div class="login-actions"><button type="button" class="btn" onclick="saveProfile(this)">Save profile</button></div>` +
+    `<div id="profile-status" class="login-status muted"></div>` +
+    `<details class="admin-creds account-password" style="margin-top:18px"><summary class="muted">Change password</summary>` +
+      `<label class="cred-field"><span>New password (min 8 chars)</span><input id="new-password" type="password" autocomplete="new-password"></label>` +
+      `<div class="login-actions"><button type="button" class="btn" id="password-save-btn">Update password</button></div>` +
+      `<div id="password-status" class="login-status muted"></div>` +
+    `</details>`;
+}
+
+function wireSettingsTab() {
+  if (_settingsTab === "messages") {
+    const sel = document.getElementById("set-channel");
+    const hint = document.getElementById("set-channel-hint");
+    const upd = () => { if (hint) hint.textContent = CHANNEL_HINTS[sel.value] || ""; };
+    if (sel) { sel.onchange = upd; upd(); }
+  } else if (_settingsTab === "profile") {
+    initAccountPassword();
+  } else if (_settingsTab === "sidebar") {
+    wireSidebarEditor();
+  } else if (_settingsTab === "support") {
+    loadSupportAdmins();
+  }
+}
+
+function _collectSetInputs() {
+  const values = {};
+  document.querySelectorAll("[data-set]").forEach(inp => {
+    const key = inp.getAttribute("data-set");
+    const v = (inp.value || "").trim();
+    const f = _field(key);
+    if (f.secret && !v) return;     // keep saved secret
+    if (v !== "" || !f.secret) values[key] = v;
+  });
+  return values;
+}
+
+async function saveConnections(btn) {
+  const status = document.getElementById("conn-status");
+  if (status) status.textContent = "Saving…";
+  try {
+    await postJSON("/api/settings", { values: _collectSetInputs() });
+    if (status) status.textContent = "Saved.";
+    const sett = await getJSON("/api/settings");
+    _loginFields = sett.fields || [];
+  } catch (e) { if (status) status.textContent = "Error: " + e; }
+}
+
+async function saveMessages(btn) {
+  const status = document.getElementById("msg-status");
+  if (status) status.textContent = "Saving…";
+  try {
+    await postJSON("/api/settings", { values: _collectSetInputs() });
+    const body = { notification_channel: document.getElementById("set-channel").value };
+    ["chatbot_enabled", "daily_digest_enabled", "reminders_enabled", "background_sync_enabled"].forEach(id => {
+      const el = document.getElementById(id); if (el) body[id] = el.checked;
+    });
+    ["daily_digest_hour", "reminder_hours_before"].forEach(id => {
+      const el = document.getElementById(id); if (el) body[id] = parseInt(el.value, 10);
+    });
+    await postJSON("/api/notifications/prefs", body);
+    _setPrefs = Object.assign(_setPrefs, body);
+    const sett = await getJSON("/api/settings"); _loginFields = sett.fields || [];
+    _setMsg = await getJSON("/api/messaging/status");
+    if (status) status.textContent = "Saved.";
+  } catch (e) { if (status) status.textContent = "Error: " + e; }
+}
+
+async function testMessage(btn) {
+  const status = document.getElementById("msg-status");
+  if (status) status.textContent = "Sending test…";
+  try {
+    const r = await postJSON("/api/notifications/test");
+    if (status) status.textContent = (r.ok ? "Sent via " + (r.channel || "channel") + ". " : "Failed: ") + (r.detail || "");
+  } catch (e) { if (status) status.textContent = "Error: " + e; }
+}
+
+async function saveProfile(btn) {
+  const status = document.getElementById("profile-status");
+  const val = document.getElementById("ai-profile").value;
+  if (status) status.textContent = "Saving…";
+  try {
+    await postJSON("/api/settings", { values: { AI_PROFILE: val } });
+    const sett = await getJSON("/api/settings"); _loginFields = sett.fields || [];
+    if (status) status.textContent = "Saved. Nexus AI will use this in chat.";
+  } catch (e) { if (status) status.textContent = "Error: " + e; }
+}
+
+async function syncGoogle(btn) {
+  const o = btn ? btn.textContent : "";
+  if (btn) { btn.disabled = true; btn.textContent = "Syncing…"; }
+  let lines = [];
+  for (const src of ["gmail", "classroom"]) {
+    try {
+      const r = await postJSON("/sync/" + src);
+      const info = r && r[src];
+      lines.push(`${src}: ${info && info.error ? "failed (" + info.error + ")" : "synced " + ((info && info.count) ?? 0)}`);
+    } catch (e) { lines.push(`${src}: ${e.message}`); }
+  }
+  if (btn) { btn.disabled = false; btn.textContent = o; }
+  alert("Google sync\n\n" + lines.join("\n"));
+  initSettings();
+}
+
 async function syncOne(src, btn) {
   const o = btn ? btn.textContent : "";
   if (btn) { btn.disabled = true; btn.textContent = "…"; }
@@ -1113,68 +1646,24 @@ function updateChannelHint() {
   if (sel && hint) hint.textContent = CHANNEL_HINTS[sel.value] || "";
 }
 
+let _notifCategory = "";
 async function initNotifications() {
   renderSidebar("/notifications");
-  const [prefs, msgSt] = await Promise.all([
-    getJSON("/api/notifications/prefs"),
-    getJSON("/api/messaging/status"),
-  ]);
-  const box = document.getElementById("sms-status-box");
-  if (box) {
-    const ok = msgSt.sms_ready ? '<span class="dot on">●</span> SMS configured' : '<span class="dot off">○</span> SMS not ready';
-    const reply = msgSt.reply_enabled ? "Webhook: set" : "Webhook: add Public HTTPS URL on Your account";
-    let html = `<div>${ok} · ${reply}</div>` +
-      `<div class="muted">School number: ${esc(msgSt.sms_from || "—")} · Your phone: ${esc(msgSt.your_phone || "—")}` +
-      `${msgSt.your_name ? " (" + esc(msgSt.your_name) + ")" : ""}</div>`;
-    if (msgSt.last_sms_error_hint) {
-      html += `<div class="muted" style="color:var(--danger,#c44)">Last SMS error: ${esc(msgSt.last_sms_error_hint)}</div>`;
-    }
-    if (msgSt.hint) html += `<div class="muted">${esc(msgSt.hint)}</div>`;
-    box.innerHTML = html;
-  }
-  NOTIFY_IDS.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (el.type === "checkbox") el.checked = !!prefs[id];
-    else el.value = prefs[id];
+  await loadNotificationFeed();
+  document.querySelectorAll("[data-notif-tab]").forEach(btn => {
+    btn.onclick = () => {
+      _notifCategory = btn.dataset.notifTab;
+      document.querySelectorAll("[data-notif-tab]").forEach(b =>
+        b.classList.toggle("active", b.dataset.notifTab === _notifCategory));
+      loadNotificationFeed();
+    };
   });
-  const ch = document.getElementById("notification_channel");
-  if (ch) {
-    ch.value = prefs.notification_channel || "sms";
-    ch.onchange = updateChannelHint;
-    updateChannelHint();
-  }
-  document.getElementById("notify-save").onclick = saveNotifications;
-  document.getElementById("notify-test").onclick = testNotification;
-}
-
-async function saveNotifications() {
-  const status = document.getElementById("notify-status");
-  const chEl = document.getElementById("notification_channel");
-  const body = { notification_channel: chEl ? chEl.value : "sms" };
-  NOTIFY_IDS.forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    body[id] = el.type === "checkbox" ? el.checked : parseInt(el.value, 10);
-  });
-  status.textContent = "Saving…";
-  try {
-    await postJSON("/api/notifications/prefs", body);
-    status.textContent = "Saved. Scheduler updated.";
-  } catch (e) {
-    status.textContent = "Error: " + e;
-  }
-}
-
-async function testNotification() {
-  const status = document.getElementById("notify-status");
-  status.textContent = "Sending test…";
-  try {
-    const r = await postJSON("/api/notifications/test");
-    status.textContent = r.ok ? r.detail : ("Failed: " + (r.detail || "unknown"));
-  } catch (e) {
-    status.textContent = "Error: " + e;
-  }
+  const markBtn = document.getElementById("notif-mark-all");
+  if (markBtn) markBtn.onclick = async () => {
+    await postJSON("/api/notifications/read", { all: true });
+    await loadNotificationFeed();
+    refreshNavUnread();
+  };
 }
 
 // ---------- LIBRARY ----------
@@ -1334,4 +1823,857 @@ async function initMaterials() {
   document.getElementById("m-course").onchange = loadMaterials;
   document.getElementById("m-sort").onchange = loadMaterials;
   await loadMaterials();
+}
+
+// ===================================================================
+// SHARED: modal / overlay helpers
+// ===================================================================
+function _overlay(innerHtml) {
+  const back = document.createElement("div");
+  back.className = "modal-back";
+  back.innerHTML = `<div class="modal-card">${innerHtml}</div>`;
+  document.body.appendChild(back);
+  back.addEventListener("click", (e) => { if (e.target === back) back.remove(); });
+  return back;
+}
+function showInfoModal(title, message) {
+  const back = _overlay(
+    `<h3 class="modal-title">${esc(title)}</h3>` +
+    `<p class="modal-msg">${esc(message)}</p>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-ok>OK</button></div>`);
+  back.querySelector("[data-ok]").onclick = () => back.remove();
+  return back;
+}
+function showProfanityWarning(message) {
+  const back = _overlay(
+    `<h3 class="modal-title" style="color:var(--priority-high)">Message blocked</h3>` +
+    `<p class="modal-msg">${esc(message || "Your behavior is noted and will be reported")}</p>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-ok>Understood</button></div>`);
+  back.querySelector("[data-ok]").onclick = () => back.remove();
+}
+function ensureChatUsername(suggested) {
+  return new Promise((resolve) => {
+    const back = _overlay(
+      `<h3 class="modal-title">Pick a chat username</h3>` +
+      `<p class="modal-msg">A username is required to post in chats. It will be shown next to your messages.</p>` +
+      `<input id="uname-input" type="text" placeholder="username" value="${esc(suggested || "")}" maxlength="120">` +
+      `<div class="modal-err muted" id="uname-err"></div>` +
+      `<div class="modal-actions"><button type="button" class="btn" data-cancel>Cancel</button>` +
+      `<button type="button" class="btn" data-save>Save</button></div>`);
+    const input = back.querySelector("#uname-input");
+    input.focus();
+    back.querySelector("[data-cancel]").onclick = () => { back.remove(); resolve(null); };
+    back.querySelector("[data-save]").onclick = async () => {
+      const v = (input.value || "").trim();
+      if (v.length < 2) { back.querySelector("#uname-err").textContent = "At least 2 characters."; return; }
+      try {
+        const r = await postJSON("/api/community/profile", { username: v });
+        back.remove();
+        resolve(r.username || v);
+      } catch (e) { back.querySelector("#uname-err").textContent = "Error: " + e; }
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") back.querySelector("[data-save]").click(); });
+  });
+}
+function fmtWhen(iso) {
+  const d = parseIsoDate(iso);
+  if (!d) return "";
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// ===================================================================
+// NOTIFICATIONS — in-app feed
+// ===================================================================
+const NOTIF_CAT_LABELS = {
+  task: "Task", grade: "Grade", announcement: "Announcement",
+  club: "Club", chat: "Chat", other: "Other", news: "News",
+};
+async function loadNotificationFeed() {
+  const root = document.getElementById("notif-feed");
+  if (!root) return;
+  const q = _notifCategory ? `?category=${encodeURIComponent(_notifCategory)}` : "";
+  const data = await getJSON(`/api/notifications/feed${q}`);
+  const rows = data.notifications || [];
+  if (!rows.length) {
+    root.innerHTML = `<div class="muted">No notifications${_notifCategory ? " in this category" : ""} yet. They appear after you Sync.</div>`;
+    return;
+  }
+  root.innerHTML = rows.map(n =>
+    `<article class="notif-item${n.is_read ? "" : " notif-unread"}">` +
+      `<div class="notif-meta"><span class="notif-cat notif-cat-${esc(n.category)}">${esc(NOTIF_CAT_LABELS[n.category] || n.category)}</span>` +
+      ` · ${esc(fmtWhen(n.created_at))}${n.source ? " · " + esc(sourceLabel(n.source)) : ""}</div>` +
+      `<div class="notif-title">${esc(n.title)}</div>` +
+      (n.body ? `<div class="notif-body">${esc(n.body)}</div>` : "") +
+      (n.link ? `<a class="notif-link" href="${esc(n.link)}">Open →</a>` : "") +
+    `</article>`).join("");
+}
+
+// ===================================================================
+// COMMUNITY — landing
+// ===================================================================
+async function initCommunity() {
+  renderSidebar("/community");
+  const root = document.getElementById("community-root");
+  if (!root) return;
+  let data = {};
+  try { data = await getJSON("/api/community/overview"); } catch (e) { data = {}; }
+  const tiles = [
+    { href: "/community/news", title: "BHS News", desc: "Latest video from the school's YouTube channel." },
+    { href: "/community/journal", title: "BHS Journal", desc: data.journal && data.journal.available ? "Read the latest issue." : "No issue uploaded yet." },
+    { href: "/community/clubs", title: "Clubs", desc: `${data.clubs_count || 0} club${(data.clubs_count || 0) === 1 ? "" : "s"} — join with an access code.` },
+  ];
+  if (data.school_chat_enabled) {
+    tiles.push({ href: "/community/chat", title: "School Chat", desc: "Talk with the whole school or your grade." });
+  }
+  root.innerHTML = tiles.map(t =>
+    `<a class="community-tile" href="${t.href}">` +
+    `<div class="community-tile-title">${esc(t.title)}</div>` +
+    `<div class="muted">${esc(t.desc)}</div></a>`).join("");
+}
+
+// ===================================================================
+// COMMUNITY — BHS News (YouTube)
+// ===================================================================
+async function initCommunityNews() {
+  renderSidebar("/community");
+  const root = document.getElementById("news-root");
+  if (!root) return;
+  root.innerHTML = `<div class="muted">Loading latest video…</div>`;
+  let data = {};
+  try { data = await getJSON("/api/community/news"); } catch (e) {}
+  renderNews(root, data);
+  const btn = document.getElementById("news-refresh");
+  if (btn) btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Refreshing…";
+    try { data = await getJSON("/api/community/news?refresh=1"); renderNews(root, data); }
+    catch (e) {}
+    btn.disabled = false; btn.textContent = "Refresh";
+  };
+}
+function renderNews(root, data) {
+  if (data && data.embed_url) {
+    const watch = data.watch_url || data.channel_url || "";
+    root.innerHTML = `<div class="video-wrap"><iframe src="${esc(data.embed_url)}" title="BHS News" ` +
+      `referrerpolicy="strict-origin-when-cross-origin" ` +
+      `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>` +
+      `<div class="muted" style="margin-top:10px">` +
+      (watch ? `<a href="${esc(watch)}" target="_blank" rel="noopener">Watch on YouTube →</a> · ` : "") +
+      `<a href="${esc(data.channel_url)}" target="_blank" rel="noopener">Visit the channel →</a></div>`;
+  } else {
+    root.innerHTML = `<div class="muted">Could not load the latest video automatically. ` +
+      `An admin can pin a video on <a href="/platform-config">Platform Config</a>, then click Refresh. ` +
+      (data && data.channel_url ? `<a href="${esc(data.channel_url)}" target="_blank" rel="noopener">Open the channel →</a>` : "") + `</div>`;
+  }
+}
+
+function clubImgHtml(url, className) {
+  if (!url) return "";
+  return `<img class="${className}" src="${esc(url)}" alt="" loading="lazy">`;
+}
+
+async function uploadClubImage(clubId, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch(`/api/clubs/${clubId}/image`, { method: "POST", body: fd });
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(r.status + " " + (err || r.statusText).slice(0, 120));
+  }
+  return r.json();
+}
+
+async function deleteClub(clubId) {
+  const c = _findClub(clubId) || _club;
+  const label = (c && c.name) || "this club";
+  if (!confirm(`Permanently delete "${label}"? This cannot be undone.`)) return;
+  await postJSON(`/api/clubs/${clubId}/delete`);
+  if (location.pathname.includes("/community/club")) location.href = "/community/clubs";
+  else await loadClubs();
+}
+
+async function renderJournalPdf(fileUrl, root) {
+  root.innerHTML =
+    `<div class="pdf-toolbar">` +
+    `<button type="button" class="btn" id="pdf-prev" disabled>Previous</button>` +
+    `<span id="pdf-page-info" class="muted">Loading…</span>` +
+    `<button type="button" class="btn" id="pdf-next" disabled>Next</button>` +
+    `<a class="btn" href="${esc(fileUrl)}" target="_blank" rel="noopener">Open in new tab</a>` +
+    `</div>` +
+    `<div class="pdf-canvas-wrap"><canvas id="pdf-canvas"></canvas></div>`;
+  const pdfjs = window.pdfjsLib;
+  if (!pdfjs) {
+    root.innerHTML = `<div class="muted">PDF viewer failed to load. <a href="${esc(fileUrl)}" target="_blank" rel="noopener">Open the journal in a new tab →</a></div>`;
+    return;
+  }
+  pdfjs.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  let pdf = null;
+  let pageNum = 1;
+  let rendering = false;
+  const canvas = document.getElementById("pdf-canvas");
+  const ctx = canvas.getContext("2d");
+  const info = document.getElementById("pdf-page-info");
+  const prevBtn = document.getElementById("pdf-prev");
+  const nextBtn = document.getElementById("pdf-next");
+  async function renderPage() {
+    if (!pdf || rendering) return;
+    rendering = true;
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.35 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    info.textContent = `Page ${pageNum} of ${pdf.numPages}`;
+    prevBtn.disabled = pageNum <= 1;
+    nextBtn.disabled = pageNum >= pdf.numPages;
+    rendering = false;
+  }
+  prevBtn.onclick = () => { if (pageNum > 1) { pageNum--; renderPage(); } };
+  nextBtn.onclick = () => { if (pdf && pageNum < pdf.numPages) { pageNum++; renderPage(); } };
+  try {
+    pdf = await pdfjs.getDocument({ url: fileUrl, withCredentials: true }).promise;
+    await renderPage();
+  } catch (e) {
+    root.innerHTML = `<div class="muted">Could not render the PDF inline (${esc(String(e))}). ` +
+      `<a href="${esc(fileUrl)}" target="_blank" rel="noopener">Open in new tab →</a></div>`;
+  }
+}
+
+// ===================================================================
+// COMMUNITY — BHS Journal (PDF)
+// ===================================================================
+async function initCommunityJournal() {
+  renderSidebar("/community");
+  const root = document.getElementById("journal-root");
+  if (!root) return;
+  let data = {};
+  try { data = await getJSON("/api/community/journal"); } catch (e) {}
+  const title = document.getElementById("journal-title");
+  if (title) title.textContent = data.title || "BHS Journal";
+  if (data.available && data.file_url) {
+    await renderJournalPdf(data.file_url, root);
+  } else {
+    root.innerHTML = `<div class="muted">No journal has been uploaded yet.` +
+      (data.is_admin ? ` Upload one on <a href="/platform-config">Platform Config</a>.` : "") + `</div>`;
+  }
+}
+
+// ===================================================================
+// COMMUNITY — Clubs dashboard
+// ===================================================================
+let _clubsData = null;
+async function initClubs() {
+  renderSidebar("/community");
+  await loadClubs();
+  const createBtn = document.getElementById("club-create-btn");
+  if (createBtn) createBtn.onclick = openCreateClub;
+}
+async function loadClubs() {
+  const data = await getJSON("/api/clubs");
+  _clubsData = data;
+  const adminBar = document.getElementById("club-admin-bar");
+  if (adminBar) adminBar.hidden = !data.is_admin;
+  renderClubSection("club-manage", data.manage, "manage");
+  renderClubSection("club-joined", data.joined, "joined");
+  renderClubSection("club-all", data.all, "all");
+  const manageWrap = document.getElementById("club-manage-wrap");
+  if (manageWrap) manageWrap.hidden = !(data.manage && data.manage.length);
+}
+function renderClubSection(id, clubs, mode) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (!clubs || !clubs.length) {
+    el.innerHTML = `<div class="muted">${mode === "all" ? "No clubs yet." : mode === "joined" ? "You haven't joined any clubs yet." : ""}</div>`;
+    return;
+  }
+  el.innerHTML = clubs.map(c => clubCard(c, mode)).join("");
+}
+function _truncate(text, n) {
+  if (!text) return "";
+  return text.length > n ? text.slice(0, n).trim() + "…" : text;
+}
+function clubCard(c, mode) {
+  const portal = (mode === "joined" || mode === "manage" || c.is_member || c.is_manager);
+  const img = clubImgHtml(c.image_url, "club-card-img");
+  const desc = (c.description || "").length > 150
+    ? `<span class="club-desc-short">${esc(_truncate(c.description, 150))} <button type="button" class="link-btn" onclick="event.stopPropagation();openClubPreview(${c.id})">more</button></span>`
+    : esc(c.description || "No description.");
+  const tag = c.is_manager ? `<span class="club-tag">Leader / Teacher</span>` : (c.is_member ? `<span class="club-tag">Member</span>` : "");
+  const del = (_clubsData && _clubsData.can_delete_clubs)
+    ? `<button type="button" class="link-btn club-del-btn" onclick="event.stopPropagation();deleteClub(${c.id})">Delete</button>` : "";
+  const onclick = portal ? `onclick="location.href='/community/club?id=${c.id}'"` : `onclick="openClubPreview(${c.id})"`;
+  return `<article class="club-card" ${onclick}>` +
+    img +
+    `<div class="club-card-body">` +
+    `<div class="club-card-head"><span class="club-card-name">${esc(c.name)}</span>${tag}${del}</div>` +
+    `<div class="club-card-desc">${desc}</div>` +
+    `<div class="muted club-card-meta">${c.member_count} member${c.member_count === 1 ? "" : "s"}` +
+    (portal ? ` · click to enter` : ` · click to join`) + `</div>` +
+    `</div></article>`;
+}
+function _findClub(id) {
+  if (!_clubsData) return null;
+  return (_clubsData.all || []).find(c => c.id === id);
+}
+function openClubPreview(id) {
+  const c = _findClub(id);
+  if (!c) return;
+  const img = clubImgHtml(c.image_url, "club-preview-img");
+  const emails = [];
+  if (c.leader_email) emails.push("leader " + c.leader_email);
+  if (c.teacher_email) emails.push("teacher " + c.teacher_email);
+  const help = emails.length
+    ? `Don't have a code? Write the ${emails.map(esc).join(", ")}.`
+    : `Don't have a code? Ask the club leadership.`;
+  const back = _overlay(
+    img +
+    `<h3 class="modal-title">${esc(c.name)}</h3>` +
+    `<p class="modal-msg">${esc(c.description || "No description.")}</p>` +
+    `<input id="club-code-input" type="text" placeholder="Enter access code" maxlength="64">` +
+    `<div class="modal-err muted" id="club-code-err"></div>` +
+    `<p class="muted">${help}</p>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-cancel>Close</button>` +
+    `<button type="button" class="btn" data-join>Join club</button></div>`);
+  back.querySelector("[data-cancel]").onclick = () => back.remove();
+  back.querySelector("[data-join]").onclick = async () => {
+    const code = (back.querySelector("#club-code-input").value || "").trim();
+    try {
+      await postJSON(`/api/clubs/${id}/join`, { code });
+      back.remove();
+      location.href = `/community/club?id=${id}`;
+    } catch (e) {
+      back.querySelector("#club-code-err").textContent = String(e).replace(/^Error:\s*/, "").replace(/^\d+\s+\w+:\s*/, "");
+    }
+  };
+}
+function openCreateClub() {
+  const back = _overlay(
+    `<h3 class="modal-title">Create a club</h3>` +
+    `<label class="cred-field"><span>Club name *</span><input id="cc-name" type="text"></label>` +
+    `<label class="cred-field"><span>Description</span><input id="cc-desc" type="text"></label>` +
+    `<label class="cred-field"><span>Club image (PNG/JPG)</span><input id="cc-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>` +
+    `<label class="cred-field"><span>Or image URL (optional)</span><input id="cc-img" type="text" placeholder="https://…"></label>` +
+    `<label class="cred-field"><span>Leader email</span><input id="cc-leader" type="text"></label>` +
+    `<label class="cred-field"><span>Teacher email (optional)</span><input id="cc-teacher" type="text"></label>` +
+    `<label class="cred-field"><span>Initial access code</span><input id="cc-code" type="text"></label>` +
+    `<label class="cred-field"><span>Schedule (e.g. Every Wed 15:00 at AP Hub)</span><input id="cc-sched" type="text"></label>` +
+    `<div class="modal-err muted" id="cc-err"></div>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-cancel>Cancel</button>` +
+    `<button type="button" class="btn" data-create>Create</button></div>`);
+  back.querySelector("[data-cancel]").onclick = () => back.remove();
+  back.querySelector("[data-create]").onclick = async () => {
+    const payload = {
+      name: back.querySelector("#cc-name").value.trim(),
+      description: back.querySelector("#cc-desc").value.trim(),
+      image_url: back.querySelector("#cc-img").value.trim(),
+      leader_email: back.querySelector("#cc-leader").value.trim(),
+      teacher_email: back.querySelector("#cc-teacher").value.trim(),
+      access_code: back.querySelector("#cc-code").value.trim(),
+      schedule: back.querySelector("#cc-sched").value.trim(),
+    };
+    if (!payload.name) { back.querySelector("#cc-err").textContent = "Name is required."; return; }
+    try {
+      const r = await postJSON("/api/clubs/create", payload);
+      const imgFile = back.querySelector("#cc-file").files[0];
+      if (imgFile && r.club && r.club.id) await uploadClubImage(r.club.id, imgFile);
+      back.remove();
+      await loadClubs();
+    }
+    catch (e) { back.querySelector("#cc-err").textContent = "Error: " + e; }
+  };
+}
+
+// ===================================================================
+// COMMUNITY — Club portal
+// ===================================================================
+let _club = null;
+let _clubChatLast = 0;
+let _clubChatTimer = null;
+function _clubId() {
+  return parseInt(new URLSearchParams(location.search).get("id"), 10);
+}
+async function initClubPortal() {
+  renderSidebar("/community");
+  const id = _clubId();
+  const root = document.getElementById("club-root");
+  if (!root || !id) return;
+  let data;
+  try {
+    data = await getJSON(`/api/clubs/${id}`);
+  } catch (e) {
+    root.innerHTML = `<div class="muted">You need to join this club to view it. <a href="/community/clubs">Back to clubs →</a></div>`;
+    return;
+  }
+  _club = data;
+  renderClubPortal(root, data);
+  _clubChatLast = 0;
+  await loadClubChat(true);
+  if (_clubChatTimer) clearInterval(_clubChatTimer);
+  _clubChatTimer = setInterval(() => loadClubChat(false), 4000);
+}
+function renderClubPortal(root, c) {
+  const emails = [];
+  if (c.teacher_email) emails.push(`<div><strong>Teacher:</strong> ${esc(c.teacher_email)}</div>`);
+  if (c.leader_email) emails.push(`<div><strong>Leader:</strong> ${esc(c.leader_email)}</div>`);
+  const sched = c.schedule ? `<div><strong>Schedule:</strong> ${esc(c.schedule)}</div>` : "";
+  const manageBtn = c.can_manage ? `<button type="button" class="btn" onclick="openClubManage()">Manage club</button>` : "";
+  const delBtn = c.can_delete_clubs ? `<button type="button" class="btn" onclick="deleteClub(${c.id})">Delete club</button>` : "";
+  const postBtn = c.can_manage ? `<button type="button" class="btn" onclick="openClubPost()">Post update</button>` : "";
+  root.innerHTML =
+    `<div class="topbar"><div class="breadcrumb">CLUB / ${esc(c.name).toUpperCase()}</div>` +
+    `<div class="row-actions">${manageBtn}${delBtn}<a class="btn" href="/community/clubs">All clubs</a></div></div>` +
+    `<div class="club-portal">` +
+      `<div class="club-info">` +
+        `<div class="section-h">CLUB DETAILS</div>` +
+        `<div class="club-details">${emails.join("") || '<div class="muted">No contacts listed.</div>'}${sched}</div>` +
+      `</div>` +
+      `<div class="club-news-col">` +
+        `<div class="section-h">NEWS & UPDATES ${postBtn}</div>` +
+        `<div id="club-news-list"></div>` +
+      `</div>` +
+      `<div class="club-chat-col">` +
+        `<div class="section-h">CLUB CHAT</div>` +
+        `<div class="chat-box" id="club-messages"></div>` +
+        `<div class="chat-input"><input type="text" id="club-chat-text" placeholder="Message the club…" autocomplete="off">` +
+        `<button type="button" id="club-chat-send">Send</button></div>` +
+      `</div>` +
+    `</div>`;
+  renderClubNews(c.news || []);
+  const sendBtn = document.getElementById("club-chat-send");
+  const inp = document.getElementById("club-chat-text");
+  if (sendBtn) sendBtn.onclick = sendClubChat;
+  if (inp) inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); sendClubChat(); } });
+}
+function renderClubNews(news) {
+  const el = document.getElementById("club-news-list");
+  if (!el) return;
+  if (!news.length) { el.innerHTML = `<div class="muted">No updates yet.</div>`; return; }
+  el.innerHTML = news.map(n => {
+    const del = (_club && _club.can_manage)
+      ? `<button type="button" class="link-btn" onclick="deleteClubNews(${n.id})">remove</button>` : "";
+    const imgs = [];
+    if (n.image_url) imgs.push(`<img class="club-news-img" src="${esc(n.image_url)}" alt="">`);
+    (n.images || []).forEach(im => imgs.push(`<img class="club-news-img" src="${esc(im.url)}" alt="${esc(im.name || "")}">`));
+    const files = (n.files || []).map(f =>
+      `<a class="material-attachment" href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name || "file")}</a>`).join("");
+    return `<article class="club-news-item">` +
+      `<div class="notif-meta">${esc(n.author_name || "Leadership")} · ${esc(fmtWhen(n.created_at))} ${del}</div>` +
+      (n.title ? `<h3 class="club-news-title">${esc(n.title)}</h3>` : "") +
+      imgs.join("") +
+      `<div class="club-news-body chat-md">${renderChatMarkdown(n.body || "")}</div>` +
+      (files ? `<div class="material-attachments">${files}</div>` : "") +
+      `</article>`;
+  }).join("");
+  el.querySelectorAll(".chat-md").forEach(typesetChat);
+}
+async function deleteClubNews(nid) {
+  if (!confirm("Remove this update?")) return;
+  await postJSON(`/api/clubs/${_club.id}/news/${nid}/delete`);
+  const data = await getJSON(`/api/clubs/${_club.id}`);
+  _club = data;
+  renderClubNews(data.news || []);
+}
+function openClubPost() {
+  const back = _overlay(
+    `<h3 class="modal-title">Post an update</h3>` +
+    `<label class="cred-field"><span>Title (optional)</span><input id="cn-title" type="text"></label>` +
+    `<label class="cred-field"><span>Body — Markdown & LaTeX ($…$) supported</span>` +
+    `<textarea id="cn-body" rows="6"></textarea></label>` +
+    `<label class="cred-field"><span>Images (browse — PNG/JPG/WEBP/GIF, multiple)</span>` +
+    `<input id="cn-images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></label>` +
+    `<label class="cred-field"><span>Attachments (PDF, DOCX, PPTX, XLSX… multiple)</span>` +
+    `<input id="cn-files" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.zip" multiple></label>` +
+    `<label class="cred-field"><span>Or image URL (optional)</span><input id="cn-img" type="text" placeholder="https://…"></label>` +
+    `<div class="modal-err muted" id="cn-err"></div>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-cancel>Cancel</button>` +
+    `<button type="button" class="btn" data-post>Post</button></div>`);
+  back.querySelector("[data-cancel]").onclick = () => back.remove();
+  back.querySelector("[data-post]").onclick = async () => {
+    const title = back.querySelector("#cn-title").value.trim();
+    const body = back.querySelector("#cn-body").value.trim();
+    const imgUrl = back.querySelector("#cn-img").value.trim();
+    const images = back.querySelector("#cn-images").files;
+    const files = back.querySelector("#cn-files").files;
+    if (!title && !body && !images.length && !files.length && !imgUrl) {
+      back.querySelector("#cn-err").textContent = "Write something or attach a file."; return;
+    }
+    const fd = new FormData();
+    fd.append("title", title);
+    fd.append("body", body);
+    if (imgUrl) fd.append("image_url", imgUrl);
+    for (const f of images) fd.append("images", f);
+    for (const f of files) fd.append("files", f);
+    const btn = back.querySelector("[data-post]");
+    btn.disabled = true; btn.textContent = "Posting…";
+    try {
+      const r = await fetch(`/api/clubs/${_club.id}/news`, { method: "POST", body: fd });
+      if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+      back.remove();
+      const data = await getJSON(`/api/clubs/${_club.id}`);
+      _club = data; renderClubNews(data.news || []);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Post";
+      back.querySelector("#cn-err").textContent = "Error: " + e;
+    }
+  };
+}
+function openClubManage() {
+  const c = _club;
+  const back = _overlay(
+    `<h3 class="modal-title">Manage ${esc(c.name)}</h3>` +
+    `<label class="cred-field"><span>Description</span><input id="cm-desc" type="text" value="${esc(c.description || "")}"></label>` +
+    `<label class="cred-field"><span>Leader email</span><input id="cm-leader" type="email" value="${esc(c.leader_email || "")}"></label>` +
+    `<label class="cred-field"><span>Teacher email</span><input id="cm-teacher" type="email" value="${esc(c.teacher_email || "")}"></label>` +
+    `<label class="cred-field"><span>Schedule</span><input id="cm-sched" type="text" value="${esc(c.schedule || "")}"></label>` +
+    `<label class="cred-field"><span>Upload club image</span><input id="cm-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>` +
+    (c.image_url ? `<div class="muted">Current: ${clubImgHtml(c.image_url, "club-manage-preview")}</div>` : "") +
+    `<label class="cred-field"><span>Or external image URL</span><input id="cm-img" type="text" placeholder="https://…"></label>` +
+    `<label class="cred-field"><span>Access code</span><input id="cm-code" type="text" value="${esc(c.access_code || "")}"></label>` +
+    `<div class="modal-err muted" id="cm-err"></div>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-cancel>Cancel</button>` +
+    `<button type="button" class="btn" data-save>Save</button></div>`);
+  back.querySelector("[data-cancel]").onclick = () => back.remove();
+  back.querySelector("[data-save]").onclick = async () => {
+    const payload = {
+      description: back.querySelector("#cm-desc").value,
+      leader_email: back.querySelector("#cm-leader").value.trim(),
+      teacher_email: back.querySelector("#cm-teacher").value.trim(),
+      schedule: back.querySelector("#cm-sched").value,
+      image_url: back.querySelector("#cm-img").value.trim(),
+      access_code: back.querySelector("#cm-code").value,
+    };
+    try {
+      const r = await postJSON(`/api/clubs/${c.id}/update`, payload);
+      const imgFile = back.querySelector("#cm-file").files[0];
+      if (imgFile) await uploadClubImage(c.id, imgFile);
+      _club = Object.assign(_club, r.club, { can_manage: true, access_code: payload.access_code, news: _club.news });
+      back.remove();
+      renderClubPortal(document.getElementById("club-root"), _club);
+    } catch (e) { back.querySelector("#cm-err").textContent = "Error: " + e; }
+  };
+}
+async function loadClubChat(initial) {
+  const box = document.getElementById("club-messages");
+  if (!box) return;
+  let data;
+  try { data = await getJSON(`/api/clubs/${_club.id}/chat?after=${_clubChatLast}`); }
+  catch (e) { return; }
+  const msgs = data.messages || [];
+  if (!msgs.length && initial) { box.innerHTML = `<div class="muted">No messages yet. Say hello.</div>`; return; }
+  if (initial) box.innerHTML = "";
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  msgs.forEach(m => { box.appendChild(chatBubble(m)); _clubChatLast = Math.max(_clubChatLast, m.id); });
+  if (initial || atBottom) box.scrollTop = box.scrollHeight;
+}
+function chatBubble(m) {
+  const el = document.createElement("div");
+  el.className = "chat-bubble" + (m.is_teacher ? " chat-teacher" : "");
+  const tag = m.is_teacher ? `<span class="teacher-badge">Teacher</span>` : "";
+  el.innerHTML = `<div class="chat-bubble-head"><span class="chat-user">${esc(m.username)}</span>${tag}` +
+    `<span class="chat-time">${esc(fmtWhen(m.created_at))}</span></div>` +
+    `<div class="chat-bubble-body">${esc(m.content)}</div>`;
+  return el;
+}
+async function sendClubChat() {
+  const inp = document.getElementById("club-chat-text");
+  const text = (inp.value || "").trim();
+  if (!text) return;
+  try {
+    const r = await postJSON(`/api/clubs/${_club.id}/chat/send`, { content: text });
+    inp.value = "";
+    if (r.message) {
+      const box = document.getElementById("club-messages");
+      const empty = box.querySelector(".muted");
+      if (empty) empty.remove();
+      box.appendChild(chatBubble(r.message));
+      _clubChatLast = Math.max(_clubChatLast, r.message.id);
+      box.scrollTop = box.scrollHeight;
+    }
+  } catch (e) {
+    await handleChatError(e);
+  }
+}
+
+// ===================================================================
+// COMMUNITY — School chat
+// ===================================================================
+let _scRoom = "all";
+let _scLast = 0;
+let _scTimer = null;
+let _scQuery = "";
+async function initSchoolChat() {
+  renderSidebar("/community");
+  const root = document.getElementById("school-chat-root");
+  if (!root) return;
+  let data;
+  try { data = await getJSON("/api/school-chat?room=all"); } catch (e) { data = {}; }
+  if (data.enabled === false) {
+    root.innerHTML = `<div class="muted">School chat is currently turned off by an administrator.</div>`;
+    return;
+  }
+  const rooms = data.rooms || ["all"];
+  root.innerHTML =
+    `<div class="chat-rooms" id="sc-rooms">` +
+    rooms.map(r => `<button type="button" class="ann-tab${r === "all" ? " active" : ""}" data-room="${esc(r)}">${r === "all" ? "Whole school" : "Grade " + esc(r)}</button>`).join("") +
+    `</div>` +
+    `<div class="chat-search"><input type="text" id="sc-search" placeholder="Search messages…" autocomplete="off"></div>` +
+    `<div class="chat-box" id="sc-messages"></div>` +
+    `<div class="chat-input"><input type="text" id="sc-text" placeholder="Message…" autocomplete="off">` +
+    `<button type="button" id="sc-send">Send</button></div>`;
+  document.querySelectorAll("#sc-rooms [data-room]").forEach(b => b.onclick = () => {
+    _scRoom = b.dataset.room;
+    document.querySelectorAll("#sc-rooms [data-room]").forEach(x => x.classList.toggle("active", x === b));
+    _scLast = 0;
+    loadSchoolChat(true);
+  });
+  const search = document.getElementById("sc-search");
+  search.addEventListener("input", () => { _scQuery = search.value.trim(); _scLast = 0; loadSchoolChat(true); });
+  document.getElementById("sc-send").onclick = sendSchoolChat;
+  document.getElementById("sc-text").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); sendSchoolChat(); } });
+  await loadSchoolChat(true);
+  if (_scTimer) clearInterval(_scTimer);
+  _scTimer = setInterval(() => { if (!_scQuery) loadSchoolChat(false); }, 4000);
+}
+async function loadSchoolChat(initial) {
+  const box = document.getElementById("sc-messages");
+  if (!box) return;
+  const qs = new URLSearchParams({ room: _scRoom, after: String(_scLast) });
+  if (_scQuery) qs.set("q", _scQuery);
+  let data;
+  try { data = await getJSON(`/api/school-chat?${qs.toString()}`); } catch (e) { return; }
+  const msgs = data.messages || [];
+  if (initial) box.innerHTML = msgs.length ? "" : `<div class="muted">${_scQuery ? "No matching messages." : "No messages yet."}</div>`;
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  msgs.forEach(m => { box.appendChild(chatBubble(m)); if (!_scQuery) _scLast = Math.max(_scLast, m.id); });
+  if (initial || atBottom) box.scrollTop = box.scrollHeight;
+}
+async function sendSchoolChat() {
+  const inp = document.getElementById("sc-text");
+  const text = (inp.value || "").trim();
+  if (!text) return;
+  try {
+    const r = await postJSON("/api/school-chat/send", { room: _scRoom, content: text });
+    inp.value = "";
+    if (r.message && !_scQuery) {
+      const box = document.getElementById("sc-messages");
+      const empty = box.querySelector(".muted");
+      if (empty) empty.remove();
+      box.appendChild(chatBubble(r.message));
+      _scLast = Math.max(_scLast, r.message.id);
+      box.scrollTop = box.scrollHeight;
+    }
+  } catch (e) {
+    await handleChatError(e);
+  }
+}
+
+// Shared: handle 422 profanity + 400 need_username from chat sends.
+async function handleChatError(e) {
+  const msg = String(e && e.message || e);
+  // postJSON throws with status + body text; detect our flags in the body.
+  if (msg.includes("422") || msg.toLowerCase().includes("noted and will be reported")) {
+    showProfanityWarning("Your behavior is noted and will be reported");
+    return;
+  }
+  if (msg.includes("need_username") || msg.includes("Set a chat username")) {
+    let suggested = "";
+    try { const p = await getJSON("/api/community/profile"); suggested = p.suggested || ""; } catch (_) {}
+    const name = await ensureChatUsername(suggested);
+    if (name) showInfoModal("Username set", "Your username is set. Send your message again.");
+    return;
+  }
+  showInfoModal("Could not send", msg);
+}
+
+// ===================================================================
+// PLATFORM CONFIG (admin)
+// ===================================================================
+async function initPlatformConfig() {
+  renderSidebar("/platform-config");
+  const root = document.getElementById("platform-root");
+  if (!root) return;
+  let acct = {};
+  try { acct = await getJSON("/api/account"); } catch (e) {}
+  if (!acct.is_admin) {
+    root.innerHTML = `<div class="muted">This page is for administrators only.</div>`;
+    return;
+  }
+  let cfg = {};
+  try { cfg = await getJSON("/api/platform/config"); } catch (e) {}
+  renderPlatformConfig(root, cfg);
+  await initAdminCredentials();
+}
+function renderPlatformConfig(root, cfg) {
+  const j = cfg.journal || {};
+  root.innerHTML =
+    `<div class="section-h">COMMUNITY CONTROLS</div>` +
+    `<div class="settings-row"><div class="row-head">` +
+    `<label class="cred-check"><input type="checkbox" id="pc-chat" ${cfg.school_chat_enabled ? "checked" : ""}> School chat enabled</label>` +
+    `<button type="button" class="btn" id="pc-chat-save">Save</button></div></div>` +
+
+    `<div class="cred-group"><div class="section-h">TEACHER IDENTITY</div>` +
+    `<label class="cred-field"><span>Teacher email domain (messages from this domain are highlighted)</span>` +
+    `<input id="pc-domain" type="text" value="${esc(cfg.teacher_email_domain || "")}"></label>` +
+    `<button type="button" class="btn" id="pc-domain-save">Save domain</button></div>` +
+
+    `<div class="cred-group"><div class="section-h">BHS NEWS (YOUTUBE)</div>` +
+    `<label class="cred-field"><span>Channel URL</span><input id="pc-channel" type="text" value="${esc(cfg.bhs_news_channel_url || "")}"></label>` +
+    `<label class="cred-field"><span>Pin a specific video (URL or ID — optional, overrides latest)</span>` +
+    `<input id="pc-video" type="text" value="${esc(cfg.bhs_news_video_manual || "")}"></label>` +
+    `<div class="muted">Current video: ${cfg.news && cfg.news.video_id ? esc(cfg.news.video_id) : "none resolved"}</div>` +
+    `<div class="row-actions" style="margin-top:8px"><button type="button" class="btn" id="pc-news-save">Save</button>` +
+    `<button type="button" class="btn" id="pc-news-refresh">Refresh latest</button></div></div>` +
+
+    `<div class="cred-group"><div class="section-h">BHS JOURNAL (PDF)</div>` +
+    `<div class="muted">${j.available ? "A journal is uploaded." : "No journal uploaded."} ${j.available ? `<a href="${esc(j.file_url)}" target="_blank" rel="noopener">View →</a>` : ""}</div>` +
+    `<label class="cred-field"><span>Title</span><input id="pc-journal-title" type="text" value="${esc(j.title || "BHS Journal")}"></label>` +
+    `<label class="cred-field"><span>Upload PDF</span><input id="pc-journal-file" type="file" accept="application/pdf,.pdf"></label>` +
+    `<button type="button" class="btn" id="pc-journal-save">Save journal</button>` +
+    `<div class="muted" id="pc-journal-status"></div></div>` +
+
+    // Year-at-a-glance calendar overview image
+    `<div class="cred-group"><div class="section-h">CALENDAR · YEAR OVERVIEW</div>` +
+    `<div class="muted">${(cfg.calendar_overview && cfg.calendar_overview.available) ? `Uploaded. <a href="${esc(cfg.calendar_overview.file_url)}" target="_blank" rel="noopener">View →</a>` : "No year overview uploaded."} Shown on the Calendar via the “Year overview” button.</div>` +
+    `<label class="cred-field"><span>Upload image or PDF (year-at-a-glance)</span><input id="pc-cal-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf"></label>` +
+    `<button type="button" class="btn" id="pc-cal-save">Save overview</button>` +
+    `<div class="muted" id="pc-cal-status"></div></div>` +
+
+    // Admin management — owner only
+    (cfg.is_owner ? (
+      `<div class="cred-group"><div class="section-h">ADMINISTRATORS</div>` +
+      `<p class="muted">Only you (the platform owner) can add or remove admins. Admins can manage community settings; they cannot manage admins or wipe data.</p>` +
+      `<div id="pc-admin-list">${_adminListHtml(cfg.admins || [])}</div>` +
+      `<label class="cred-field"><span>Add admin by email</span><input id="pc-admin-email" type="email" placeholder="name@example.com"></label>` +
+      `<button type="button" class="btn" id="pc-admin-add">Add admin</button>` +
+      `<div class="muted" id="pc-admin-status"></div></div>`
+    ) : "") +
+
+    `<div id="admin-creds-section" class="admin-creds-panel">` +
+    `<div class="section-h">ADMIN — SHARED SERVER CREDENTIALS</div>` +
+    `<p class="muted" id="admin-creds-note">Twilio, Cerebras, Google OAuth app and webhook (admin only).</p>` +
+    `<div id="admin-creds-status" class="login-status muted"></div>` +
+    `<form id="admin-creds-form" class="cred-form"></form>` +
+    `<div class="login-actions"><button type="button" class="btn" id="admin-save-btn">Save admin credentials</button></div></div>` +
+
+    // Danger zone — owner only
+    (cfg.is_owner ? (
+      `<div class="cred-group danger-zone"><div class="section-h">DANGER ZONE</div>` +
+      `<p class="muted">Permanently delete <strong>all</strong> clubs, club news & chats, school chat, in-app notifications and AI conversations for <strong>every</strong> user. This cannot be undone and is available only to you.</p>` +
+      `<button type="button" class="btn danger-btn" id="pc-wipe-btn">Clear all clubs, chats & notifications</button>` +
+      `<div class="muted" id="pc-wipe-status"></div></div>`
+    ) : "");
+
+  document.getElementById("pc-chat-save").onclick = async () => {
+    await postJSON("/api/platform/config", { school_chat_enabled: document.getElementById("pc-chat").checked });
+    showInfoModal("Saved", "School chat setting updated.");
+  };
+  document.getElementById("pc-domain-save").onclick = async () => {
+    await postJSON("/api/platform/config", { teacher_email_domain: document.getElementById("pc-domain").value.trim() });
+    showInfoModal("Saved", "Teacher domain updated.");
+  };
+  document.getElementById("pc-news-save").onclick = async () => {
+    await postJSON("/api/platform/config", {
+      bhs_news_channel_url: document.getElementById("pc-channel").value.trim(),
+      bhs_news_video_manual: document.getElementById("pc-video").value.trim(),
+      refresh_news: true,
+    });
+    const c = await getJSON("/api/platform/config");
+    renderPlatformConfig(root, c); await initAdminCredentials();
+  };
+  document.getElementById("pc-news-refresh").onclick = async () => {
+    await postJSON("/api/platform/config", { refresh_news: true });
+    const c = await getJSON("/api/platform/config");
+    renderPlatformConfig(root, c); await initAdminCredentials();
+  };
+  document.getElementById("pc-journal-save").onclick = async () => {
+    const st = document.getElementById("pc-journal-status");
+    const fd = new FormData();
+    fd.append("title", document.getElementById("pc-journal-title").value.trim());
+    const f = document.getElementById("pc-journal-file").files[0];
+    if (f) fd.append("file", f);
+    st.textContent = "Saving…";
+    try {
+      const r = await fetch("/api/community/journal/upload", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await r.text());
+      st.textContent = "Saved.";
+    } catch (e) { st.textContent = "Error: " + e; }
+  };
+  const calSave = document.getElementById("pc-cal-save");
+  if (calSave) calSave.onclick = async () => {
+    const st = document.getElementById("pc-cal-status");
+    const f = document.getElementById("pc-cal-file").files[0];
+    if (!f) { st.textContent = "Choose a file first."; return; }
+    const fd = new FormData(); fd.append("file", f);
+    st.textContent = "Saving…";
+    try {
+      const r = await fetch("/api/calendar/overview/upload", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await r.text());
+      st.textContent = "Saved. Visible on the Calendar → Year overview.";
+    } catch (e) { st.textContent = "Error: " + e; }
+  };
+  const adminAdd = document.getElementById("pc-admin-add");
+  if (adminAdd) adminAdd.onclick = () => addAdmin();
+  const wipeBtn = document.getElementById("pc-wipe-btn");
+  if (wipeBtn) wipeBtn.onclick = () => wipeEverything();
+}
+
+function _adminListHtml(admins) {
+  if (!admins.length) return `<div class="muted">No admins.</div>`;
+  return `<ul class="admin-list">` + admins.map((e, i) =>
+    `<li class="admin-list-item"><span>${esc(e)}${i === 0 ? ' <span class="club-tag">Owner</span>' : ""}</span>` +
+    (i === 0 ? "" : `<button type="button" class="link-btn" onclick="removeAdmin('${esc(e)}')">remove</button>`) +
+    `</li>`).join("") + `</ul>`;
+}
+async function _refreshAdminList() {
+  try {
+    const r = await getJSON("/api/platform/config");
+    const el = document.getElementById("pc-admin-list");
+    if (el) el.innerHTML = _adminListHtml(r.admins || []);
+  } catch (e) { /* ignore */ }
+}
+async function addAdmin() {
+  const inp = document.getElementById("pc-admin-email");
+  const st = document.getElementById("pc-admin-status");
+  const email = (inp.value || "").trim();
+  if (!email) { st.textContent = "Enter an email."; return; }
+  st.textContent = "Adding…";
+  try {
+    await postJSON("/api/platform/admins", { action: "add", email });
+    inp.value = ""; st.textContent = "Added " + email + ".";
+    await _refreshAdminList();
+  } catch (e) { st.textContent = "Error: " + e; }
+}
+async function removeAdmin(email) {
+  if (!confirm("Remove admin " + email + "?")) return;
+  const st = document.getElementById("pc-admin-status");
+  try {
+    await postJSON("/api/platform/admins", { action: "remove", email });
+    if (st) st.textContent = "Removed " + email + ".";
+    await _refreshAdminList();
+  } catch (e) { if (st) st.textContent = "Error: " + e; }
+}
+async function wipeEverything() {
+  const st = document.getElementById("pc-wipe-status");
+  if (!confirm("DANGER (1/3): Permanently delete ALL clubs, club news & chats, school chat, notifications and AI conversations for EVERY user?")) return;
+  if (!confirm("Are you absolutely sure? (2/3) This cannot be undone.")) return;
+  const back = _overlay(
+    `<h3 class="modal-title" style="color:var(--priority-high)">Final confirmation (3/3)</h3>` +
+    `<p class="modal-msg">Type <strong>WIPE</strong> to permanently clear all community data for every user.</p>` +
+    `<input id="wipe-input" type="text" placeholder="WIPE" autocomplete="off">` +
+    `<div class="modal-err muted" id="wipe-err"></div>` +
+    `<div class="modal-actions"><button type="button" class="btn" data-cancel>Cancel</button>` +
+    `<button type="button" class="btn danger-btn" data-go>Wipe everything</button></div>`);
+  back.querySelector("[data-cancel]").onclick = () => back.remove();
+  back.querySelector("[data-go]").onclick = async () => {
+    const val = (back.querySelector("#wipe-input").value || "").trim();
+    if (val.toUpperCase() !== "WIPE") { back.querySelector("#wipe-err").textContent = 'Type "WIPE" exactly.'; return; }
+    try {
+      const r = await postJSON("/api/platform/wipe", { confirm: val });
+      back.remove();
+      const cleared = r.cleared || {};
+      const total = Object.values(cleared).reduce((a, b) => a + (b || 0), 0);
+      if (st) st.textContent = `Done. Removed ${total} records.`;
+      showInfoModal("Wiped", "All community data has been cleared for every user.");
+      refreshNavUnread();
+    } catch (e) { back.querySelector("#wipe-err").textContent = "Error: " + e; }
+  };
 }

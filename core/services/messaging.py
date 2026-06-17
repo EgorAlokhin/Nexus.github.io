@@ -6,7 +6,7 @@ from django.http import HttpResponse
 from xml.sax.saxutils import escape
 
 from core.models import Account, ChatMessage, Notification, Task
-from core.services.ai import chat_reply, math_tutor, _is_math
+from core.services.ai import chat_reply, math_tutor, _is_math, student_profile
 from core.services.config import cfg, user_cfg
 from core.services.context import get_current_account
 from core.services.notification_prefs import get_notification_prefs
@@ -155,13 +155,23 @@ def send_whatsapp(to, message, *, already_formatted=False, account=None):
     return _send_twilio(from_, f"whatsapp:{to_norm}", body)
 
 
+def _telegram_token(account=None):
+    return user_cfg("TELEGRAM_BOT_TOKEN", account=account) or cfg("TELEGRAM_BOT_TOKEN") or ""
+
+
+def _telegram_chat_id(account=None):
+    return user_cfg("TELEGRAM_CHAT_ID", account=account) or cfg("TELEGRAM_CHAT_ID") or ""
+
+
 def send_telegram(chat_id, message, *, account=None):
-    if not cfg("TELEGRAM_BOT_TOKEN"):
-        return False, "Telegram not configured."
-    token = cfg("TELEGRAM_BOT_TOKEN")
-    cid = chat_id or cfg("TELEGRAM_CHAT_ID")
+    if account is None:
+        account = get_current_account()
+    token = _telegram_token(account)
+    if not token:
+        return False, "Telegram not configured: add your bot token in Settings → Messages."
+    cid = chat_id or _telegram_chat_id(account)
     if not cid:
-        return False, "No Telegram chat id."
+        return False, "No Telegram chat id. Add it in Settings → Messages (message your bot, then /start)."
     body = personalize_message(message, account=account)
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
@@ -190,6 +200,22 @@ def send_notification(account, message):
     return send_sms(phone, message, account=account)
 
 
+def send_test_message(account=None):
+    """Send a test over the user's selected channel. Returns (ok, channel, detail)."""
+    if account is None:
+        account = get_current_account()
+    channel = active_channel(account)
+    msg = "Nexus test OK — notifications are working."
+    if channel == "telegram":
+        ok, detail = send_telegram(None, msg, account=account)
+    elif channel == "whatsapp":
+        ok, detail = send_whatsapp(user_phone(account=account), msg, account=account)
+    else:
+        sms_from = _sms_from() or "your Nexus number"
+        ok, detail = send_sms(user_phone(account=account), f"Nexus test OK. Text {sms_from} for help.", account=account)
+    return ok, channel, detail
+
+
 def messaging_status(account=None):
     account = account if account is not None else get_current_account()
     base = (cfg("PUBLIC_WEBHOOK_BASE") or "").strip().rstrip("/")
@@ -206,7 +232,9 @@ def messaging_status(account=None):
         "your_name": user_display_name(account=account) or None,
         "whatsapp_ready": bool(wa_from and phone and twilio_ok),
         "whatsapp_from": _strip_channel(wa_from) or None,
-        "telegram_ready": bool(cfg("TELEGRAM_BOT_TOKEN") and cfg("TELEGRAM_CHAT_ID")),
+        "telegram_ready": bool(_telegram_token(account) and _telegram_chat_id(account)),
+        "telegram_bot_set": bool(_telegram_token(account)),
+        "telegram_chat_set": bool(_telegram_chat_id(account)),
         "webhook_base": base or None,
         "sms_incoming_url": f"{base}/sms/incoming" if base else None,
         "whatsapp_incoming_url": f"{base}/whatsapp/incoming" if base else None,
@@ -237,10 +265,11 @@ def _chat_reply(body, account=None):
     tasks = list(task_q)
     hist_q = ChatMessage.objects.filter(user=user).order_by("-id")[:10] if user else []
     history = [{"role": m.role, "content": m.content} for m in hist_q][::-1]
+    profile = student_profile(user)
     if _is_math(body):
-        reply, *_ = math_tutor(body)
+        reply, *_ = math_tutor(body, history=history, profile=profile)
     else:
-        reply, *_ = chat_reply(body, tasks, history)
+        reply, *_ = chat_reply(body, tasks, history, profile=profile)
     if user:
         ChatMessage.objects.create(user=user, role="user", content=body)
         ChatMessage.objects.create(user=user, role="assistant", content=reply)

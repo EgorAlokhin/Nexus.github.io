@@ -52,7 +52,7 @@ MASK = "••••••••"
 
 # Per-user fields (stored encrypted/plain on the user's Account).
 USER_FIELDS = [
-    ("USER_DISPLAY_NAME", "Your first name (for SMS)", "text", False),
+    ("USER_DISPLAY_NAME", "Your first name (for messages)", "text", False),
     ("YOUR_PHONE_NUMBER", "Your mobile (E.164, e.g. +380…)", "text", False),
     ("VERACROSS_URL", "Veracross portal URL", "text", False),
     ("VERACROSS_USERNAME", "Veracross username", "text", False),
@@ -60,6 +60,9 @@ USER_FIELDS = [
     ("BUZZ_DOMAIN", "Accelerate/Buzz domain (optional)", "text", False),
     ("BUZZ_USERNAME", "Accelerate/Buzz username (optional)", "text", False),
     ("BUZZ_PASSWORD", "Accelerate/Buzz password (optional)", "password", True),
+    ("TELEGRAM_BOT_TOKEN", "Telegram bot token (from @BotFather)", "password", True),
+    ("TELEGRAM_CHAT_ID", "Telegram chat ID", "text", False),
+    ("AI_PROFILE", "About you — favourite & disliked subjects, learning style, goals", "textarea", False),
 ]
 
 # Global / infrastructure fields (shared, stored in the Setting table — admin only).
@@ -274,12 +277,10 @@ def sync_one_view(request, source):
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def test_notification(request):
-    sms_from = _sms_from() or "your Twilio number"
-    ok, detail = send_sms(
-        user_phone(),
-        f"Nexus test OK. New text to {sms_from} for help.",
-    )
-    return _json({"ok": ok, "channel": "sms", "detail": detail})
+    from core.services.messaging import send_test_message
+
+    ok, channel, detail = send_test_message(get_current_account())
+    return _json({"ok": ok, "channel": channel, "detail": detail})
 
 
 @csrf_exempt
@@ -437,12 +438,51 @@ def auth_google_disconnect(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def ai_chat(request):
+    conv_id = request.POST.get("conversation_id") or None
     return _json(handle_chat(
         request.POST.get("message", ""),
         request.POST.get("history", "[]"),
         request.FILES.get("file"),
         user=request.user,
+        conversation_id=conv_id,
     ))
+
+
+@require_GET
+def api_conversations(request):
+    from core.models import Conversation
+
+    rows = Conversation.objects.filter(user=request.user)[:100]
+    return _json({"conversations": [c.as_dict() for c in rows]})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_conversation_new(request):
+    from core.models import Conversation
+
+    conv = Conversation.objects.create(user=request.user)
+    return _json({"ok": True, "conversation": conv.as_dict()})
+
+
+@require_GET
+def api_conversation_messages(request, conv_id):
+    from core.models import ChatMessage, Conversation
+
+    conv = Conversation.objects.filter(user=request.user, pk=conv_id).first()
+    if not conv:
+        return _json({"error": "not found"}, status=404)
+    msgs = ChatMessage.objects.filter(conversation=conv).order_by("id")
+    return _json({"conversation": conv.as_dict(), "messages": [m.as_dict() for m in msgs]})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def api_conversation_delete(request, conv_id):
+    from core.models import Conversation
+
+    Conversation.objects.filter(user=request.user, pk=conv_id).delete()
+    return _json({"ok": True})
 
 
 @csrf_exempt

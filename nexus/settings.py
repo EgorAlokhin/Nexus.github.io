@@ -95,6 +95,10 @@ USE_TZ = True
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Uploaded media (e.g. the BHS Journal PDF). Served by a dedicated view.
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
@@ -111,6 +115,10 @@ CSRF_TRUSTED_ORIGINS = [
 
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+
+# Django defaults to same-origin, which strips Referer on cross-origin embeds and
+# breaks YouTube iframes (player error 153). YouTube expects at least the origin.
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "egor.alokhin@gmail.com")
 

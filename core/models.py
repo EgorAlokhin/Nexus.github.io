@@ -16,6 +16,7 @@ SECRET_USER_KEYS = frozenset({
     "google_refresh_token",
     "buzz_token",
     "veracross_cookies",
+    "TELEGRAM_BOT_TOKEN",
 })
 
 # Per-user (non-secret) settings kept in plain JSON on the Account.
@@ -28,6 +29,10 @@ PLAIN_USER_KEYS = frozenset({
     "BUZZ_USERNAME",
     "NOTIFICATION_PREFS",
     "NOTIFICATION_CHANNEL",
+    "CHAT_USERNAME",
+    "GRADE_LEVEL",
+    "AI_PROFILE",
+    "TELEGRAM_CHAT_ID",
 })
 
 USER_SETTING_KEYS = SECRET_USER_KEYS | PLAIN_USER_KEYS
@@ -308,14 +313,44 @@ class Account(models.Model):
         return f"Account<{self.user_id}:{self.google_email or self.user.username}>"
 
 
+class Conversation(models.Model):
+    """A persistent AI chat thread so context survives reloads (memory)."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="conversations")
+    title = models.CharField(max_length=200, blank=True, default="New chat")
+    created_at = models.DateTimeField(default=tz_now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "conversations"
+        ordering = ["-updated_at"]
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title or "New chat",
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class ChatMessage(models.Model):
     user = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="chat_messages")
+    conversation = models.ForeignKey(
+        Conversation, null=True, blank=True, on_delete=models.CASCADE, related_name="messages"
+    )
     role = models.CharField(max_length=16)
     content = models.TextField()
     timestamp = models.DateTimeField(default=tz_now)
 
     class Meta:
         db_table = "chat_messages"
+
+    def as_dict(self):
+        return {
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
 
 
 class Setting(models.Model):
@@ -324,3 +359,220 @@ class Setting(models.Model):
 
     class Meta:
         db_table = "settings"
+
+
+# ---------------------------------------------------------------------------
+# In-app notification feed (distinct from the SMS log `Notification` above).
+# ---------------------------------------------------------------------------
+
+NOTIFICATION_CATEGORIES = (
+    ("task", "Task"),
+    ("grade", "Grade"),
+    ("announcement", "Announcement"),
+    ("club", "Club"),
+    ("chat", "Chat"),
+    ("other", "Other"),
+)
+
+
+class AppNotification(models.Model):
+    """A user-facing notification shown in the in-app feed with an unread badge."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="app_notifications")
+    category = models.CharField(max_length=24, default="other")
+    title = models.CharField(max_length=512)
+    body = models.TextField(blank=True, default="")
+    source = models.CharField(max_length=32, blank=True, default="")
+    link = models.CharField(max_length=512, blank=True, default="")
+    dedupe_key = models.CharField(max_length=256, blank=True, default="", db_index=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "app_notifications"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["user", "is_read"])]
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "category": self.category,
+            "title": self.title,
+            "body": self.body or "",
+            "source": self.source or "",
+            "link": self.link or "",
+            "is_read": bool(self.is_read),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Community: Clubs
+# ---------------------------------------------------------------------------
+
+class Club(models.Model):
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    image_url = models.CharField(max_length=512, blank=True, default="")
+    leader_email = models.CharField(max_length=256, blank=True, default="")
+    teacher_email = models.CharField(max_length=256, blank=True, default="")
+    access_code = models.CharField(max_length=64, blank=True, default="")
+    schedule = models.CharField(max_length=256, blank=True, default="")
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="created_clubs")
+    created_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "clubs"
+        ordering = ["name"]
+
+    def manager_emails(self):
+        return {e.strip().lower() for e in (self.leader_email, self.teacher_email) if e and e.strip()}
+
+    def is_manager(self, email):
+        return bool(email) and email.strip().lower() in self.manager_emails()
+
+    def display_image_url(self):
+        """Uploaded club art, external URL, or empty."""
+        from pathlib import Path
+
+        from django.conf import settings
+
+        stored = (self.image_url or "").strip()
+        if stored.startswith("/community/clubs/"):
+            return stored
+        base = Path(settings.MEDIA_ROOT) / "clubs"
+        for ext in ("webp", "png", "jpg", "jpeg", "gif"):
+            if (base / f"{self.id}.{ext}").is_file():
+                return f"/community/clubs/{self.id}/image"
+        if stored.startswith(("http://", "https://", "/")):
+            return stored
+        return ""
+
+    def as_dict(self, *, user=None, email=None):
+        is_member = False
+        is_manager = self.is_manager(email)
+        if user is not None and getattr(user, "is_authenticated", False):
+            is_member = ClubMembership.objects.filter(club=self, user=user).exists()
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description or "",
+            "image_url": self.display_image_url(),
+            "leader_email": self.leader_email or "",
+            "teacher_email": self.teacher_email or "",
+            "schedule": self.schedule or "",
+            "is_member": is_member,
+            "is_manager": is_manager,
+            "member_count": ClubMembership.objects.filter(club=self).count(),
+        }
+
+
+class ClubMembership(models.Model):
+    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="club_memberships")
+    joined_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "club_memberships"
+        constraints = [
+            models.UniqueConstraint(fields=["club", "user"], name="uq_club_member"),
+        ]
+
+
+class ClubNews(models.Model):
+    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="news")
+    author = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="club_news")
+    author_name = models.CharField(max_length=120, blank=True, default="")
+    title = models.CharField(max_length=300, blank=True, default="")
+    body = models.TextField(blank=True, default="")
+    image_url = models.CharField(max_length=512, blank=True, default="")
+    created_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "club_news"
+        ordering = ["-created_at"]
+
+    def as_dict(self):
+        images, files = [], []
+        for att in self.attachments.all():
+            entry = {"id": att.id, "name": att.original_name, "url": att.url()}
+            (images if att.is_image else files).append(entry)
+        return {
+            "id": self.id,
+            "title": self.title or "",
+            "body": self.body or "",
+            "image_url": self.image_url or "",
+            "author_name": self.author_name or "",
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "images": images,
+            "files": files,
+        }
+
+
+class ClubNewsAttachment(models.Model):
+    """An image or file attached to a club news post (stored under MEDIA_ROOT)."""
+
+    news = models.ForeignKey(ClubNews, on_delete=models.CASCADE, related_name="attachments")
+    is_image = models.BooleanField(default=False)
+    stored_name = models.CharField(max_length=200)
+    original_name = models.CharField(max_length=256, blank=True, default="")
+    content_type = models.CharField(max_length=128, blank=True, default="")
+    created_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "club_news_attachments"
+        ordering = ["id"]
+
+    def url(self):
+        return f"/community/club-news/{self.news_id}/file/{self.id}"
+
+
+class ClubChatMessage(models.Model):
+    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="chat")
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="club_chat")
+    username = models.CharField(max_length=120, blank=True, default="")
+    content = models.TextField()
+    is_teacher = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "club_chat_messages"
+        ordering = ["created_at"]
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username or "Member",
+            "content": self.content,
+            "is_teacher": bool(self.is_teacher),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SchoolChatMessage(models.Model):
+    """Messages for the school-wide chat and its per-grade sub-rooms.
+
+    `room` is "all" for the main room or a grade string ("6".."12").
+    """
+
+    room = models.CharField(max_length=16, default="all", db_index=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="school_chat")
+    username = models.CharField(max_length=120, blank=True, default="")
+    content = models.TextField()
+    is_teacher = models.BooleanField(default=False)
+    created_at = models.DateTimeField(default=tz_now)
+
+    class Meta:
+        db_table = "school_chat_messages"
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["room", "created_at"])]
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "room": self.room,
+            "username": self.username or "Student",
+            "content": self.content,
+            "is_teacher": bool(self.is_teacher),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
