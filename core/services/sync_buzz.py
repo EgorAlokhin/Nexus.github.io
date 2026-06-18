@@ -42,6 +42,23 @@ def _as_list(node, *keys):
     return []
 
 
+def _buzz_login_error():
+    """Return Buzz API error text from a fresh login attempt, or '' on success."""
+    user = f"{_userspace()}/{user_cfg('BUZZ_USERNAME')}"
+    if not (_buzz_domain() and user_cfg("BUZZ_USERNAME") and user_cfg("BUZZ_PASSWORD")):
+        return "Accelerate username/password not set in Settings"
+    params = {"cmd": "login2", "username": user, "password": user_cfg("BUZZ_PASSWORD"), "_format": "json"}
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True, trust_env=False) as c:
+            data = c.get(DLAP, params=params).json()
+    except Exception as exc:
+        return f"Accelerate network error: {exc}"
+    resp = data.get("response", {})
+    if resp.get("code") == "OK":
+        return ""
+    return f"Accelerate login failed ({resp.get('code') or 'unknown'}): {resp.get('message') or resp.get('text') or 'check username/password'}"
+
+
 def buzz_login():
     user = f"{_userspace()}/{user_cfg('BUZZ_USERNAME')}"
     params = {"cmd": "login2", "username": user, "password": user_cfg("BUZZ_PASSWORD"), "_format": "json"}
@@ -254,6 +271,9 @@ def sync_buzz():
         return 0
     token, uid = _token_uid()
     if not token:
+        err = _buzz_login_error()
+        if err:
+            raise ValueError(err)
         return 0
 
     cal_resp = _dlap_get({"cmd": "getcalendaritems", "_token": token, "userid": uid, "_format": "json"})
@@ -261,7 +281,8 @@ def sync_buzz():
     if (not cal_resp or cal_resp.get("code") != "OK") and (not due_resp or due_resp.get("code") != "OK"):
         token, uid = buzz_login()
         if not token:
-            return 0
+            err = _buzz_login_error()
+            raise ValueError(err or "Accelerate login failed")
         cal_resp = _dlap_get({"cmd": "getcalendaritems", "_token": token, "userid": uid, "_format": "json"})
         due_resp = _dlap_get({"cmd": "getduesoonlist", "_token": token, "userid": uid, "_format": "json"})
         if (not cal_resp or cal_resp.get("code") != "OK") and (not due_resp or due_resp.get("code") != "OK"):

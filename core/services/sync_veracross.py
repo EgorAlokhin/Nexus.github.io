@@ -253,13 +253,19 @@ def sync_veracross():
             r = None
         if need_login:
             if not veracross_login(client):
-                return 0
+                raise ValueError(
+                    "Veracross login failed — check username/password in Settings, "
+                    "or PythonAnywhere may be blocking outbound access to veracross.eu"
+                )
             try:
                 r = client.get(classes_url)
             except Exception:
                 return 0
         if r is None or "course-list-item" not in r.text:
-            return 0
+            raise ValueError(
+                "Veracross classes page unavailable after login — "
+                "portal may be blocking automated access from this server"
+            )
         count = _parse_classes(r.text, user)
         _save_cookies(client)
     return count
