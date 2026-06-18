@@ -142,7 +142,20 @@ async function refreshNavUnread() {
   } catch (e) { /* ignore */ }
 }
 
-async function getJSON(url) { const r = await fetch(url); return r.json(); }
+async function getJSON(url) {
+  const r = await fetch(url, { credentials: "same-origin" });
+  const ct = (r.headers.get("content-type") || "").toLowerCase();
+  if (!r.ok) {
+    if (r.status === 401) return { error: "auth required", login: "/login" };
+    const text = await r.text();
+    throw new Error(r.status + " " + r.statusText + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  if (!ct.includes("application/json")) {
+    const text = await r.text();
+    throw new Error("Expected JSON from " + url + " but got " + (ct || "unknown") + (text ? ": " + text.slice(0, 160) : ""));
+  }
+  return r.json();
+}
 async function postJSON(url, body) {
   const r = await fetch(url, {
     method: "POST",
@@ -1230,25 +1243,40 @@ function _settingsBanner() {
 
 async function initSettings() {
   renderSidebar("/settings");
-  const [s, account, sett, msg, prefs] = await Promise.all([
-    getJSON("/api/status"),
-    getJSON("/api/account"),
-    getJSON("/api/settings"),
-    getJSON("/api/messaging/status"),
-    getJSON("/api/notifications/prefs"),
-  ]);
-  _setStatus = s || {}; _setAccount = account || {};
-  _loginFields = sett.fields || []; _setMsg = msg || {}; _setPrefs = prefs || {};
-  _settingsBanner();
-  document.querySelectorAll("[data-settings-tab]").forEach(btn => {
-    btn.onclick = () => {
-      _settingsTab = btn.dataset.settingsTab;
-      document.querySelectorAll("[data-settings-tab]").forEach(b =>
-        b.classList.toggle("active", b.dataset.settingsTab === _settingsTab));
-      renderSettingsTab();
-    };
-  });
-  renderSettingsTab();
+  const root = document.getElementById("settings-root");
+  try {
+    const [s, account, sett, msg, prefs] = await Promise.all([
+      getJSON("/api/status"),
+      getJSON("/api/account"),
+      getJSON("/api/settings"),
+      getJSON("/api/messaging/status"),
+      getJSON("/api/notifications/prefs"),
+    ]);
+    if (account && account.error === "auth required") {
+      location.href = "/login?next=/settings";
+      return;
+    }
+    _setStatus = s || {}; _setAccount = account || {};
+    _loginFields = sett.fields || []; _setMsg = msg || {}; _setPrefs = prefs || {};
+    _settingsBanner();
+    document.querySelectorAll("[data-settings-tab]").forEach(btn => {
+      btn.onclick = () => {
+        _settingsTab = btn.dataset.settingsTab;
+        document.querySelectorAll("[data-settings-tab]").forEach(b =>
+          b.classList.toggle("active", b.dataset.settingsTab === _settingsTab));
+        renderSettingsTab();
+      };
+    });
+    renderSettingsTab();
+  } catch (e) {
+    console.error("initSettings failed", e);
+    if (root) {
+      root.innerHTML =
+        '<div class="oauth-banner err">Settings failed to load. You may need to <a href="/login?next=/settings">sign in again</a>.</div>' +
+        '<pre class="muted" style="white-space:pre-wrap;margin-top:12px">' + esc(String(e.message || e)) + '</pre>' +
+        '<p class="muted">If this persists on PythonAnywhere, run: <code>python manage.py collectstatic --noinput</code> then Reload the web app.</p>';
+    }
+  }
 }
 
 function renderSettingsTab() {

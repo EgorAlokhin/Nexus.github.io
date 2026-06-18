@@ -101,7 +101,9 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 STORAGES = {
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        # Plain compressed storage — HTML pages reference /static/app.js directly
+        # (not {% static %} tags), so avoid ManifestStaticFilesStorage on PA.
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
 
