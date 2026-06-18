@@ -46,7 +46,7 @@ def buzz_login():
     user = f"{_userspace()}/{user_cfg('BUZZ_USERNAME')}"
     params = {"cmd": "login2", "username": user, "password": user_cfg("BUZZ_PASSWORD"), "_format": "json"}
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as c:
+        with httpx.Client(timeout=30, follow_redirects=True, trust_env=False) as c:
             data = c.get(DLAP, params=params).json()
     except Exception:
         return None, None
@@ -72,7 +72,7 @@ def _token_uid():
 
 def _dlap_get(params):
     try:
-        with httpx.Client(timeout=60, follow_redirects=True) as c:
+        with httpx.Client(timeout=60, follow_redirects=True, trust_env=False) as c:
             return c.get(DLAP, params=params).json().get("response", {})
     except Exception:
         return None

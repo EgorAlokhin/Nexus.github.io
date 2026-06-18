@@ -20,7 +20,21 @@ from core.models import Grade
 from core.services.config import user_cfg
 from core.services.context import get_current_account
 
-UA = "Mozilla/5.0 (compatible; NexusBot/1.0)"
+# Browser-like UA; avoid NexusBot — some hosts treat it differently.
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+def _httpx_client(**kwargs):
+    """Outbound HTTP client for portal scraping.
+
+    trust_env=False avoids picking up HTTP_PROXY in PA consoles; the web app
+    and console both route through PA's proxy on free accounts, but skipping
+    env proxy in some setups matches the older deployment behaviour.
+    """
+    return httpx.Client(timeout=30, follow_redirects=True, trust_env=False, **kwargs)
 
 
 def _account():
@@ -84,15 +98,15 @@ def _load_cookies():
         return {}
 
 
-def veracross_login(client) -> bool:
-    ctx = _portal_context()
-    if not ctx:
+def _login_ok(resp) -> bool:
+    if resp is None:
         return False
-    _, accounts_host, slug = ctx
-    username = user_cfg("VERACROSS_USERNAME")
-    password = user_cfg("VERACROSS_PASSWORD")
-    if not (slug and username and password):
-        return False
+    text = (getattr(resp, "text", "") or "").lower()
+    return 'name="password"' not in text and 'type="password"' not in text[:2000]
+
+
+def _veracross_login_accounts(client, accounts_host, slug, username, password) -> bool:
+    """Modern Veracross login (accounts.* host + CSRF token)."""
     login_page = f"https://{accounts_host}/{slug}/portals/login"
     try:
         page = client.get(login_page)
@@ -109,8 +123,33 @@ def veracross_login(client) -> bool:
         )
     except Exception:
         return False
-    # Success = we ended up with a Veracross session cookie and not back on the login form.
-    ok = _has_cookie(client, "_veracross_session") or 'name="password"' not in resp.text.lower()
+    return _has_cookie(client, "_veracross_session") or _login_ok(resp)
+
+
+def _veracross_login_portals(client, portals_host, slug, username, password) -> bool:
+    """Legacy portals-host login (pre-migration behaviour on some deployments)."""
+    try:
+        resp = client.post(
+            f"https://{portals_host}/{slug}/login",
+            data={"username": username, "password": password},
+        )
+    except Exception:
+        return False
+    return _has_cookie(client, "_veracross_session") or (resp.status_code < 400 and _login_ok(resp))
+
+
+def veracross_login(client) -> bool:
+    ctx = _portal_context()
+    if not ctx:
+        return False
+    portals_host, accounts_host, slug = ctx
+    username = user_cfg("VERACROSS_USERNAME")
+    password = user_cfg("VERACROSS_PASSWORD")
+    if not (slug and username and password):
+        return False
+    ok = _veracross_login_accounts(client, accounts_host, slug, username, password)
+    if not ok:
+        ok = _veracross_login_portals(client, portals_host, slug, username, password)
     if ok:
         _save_cookies(client)
     return ok
@@ -175,8 +214,10 @@ def _parse_classes(html, user):
             },
         )
         count += 1
-    # Drop grades for classes no longer present.
-    Grade.objects.filter(user=user, source="veracross").exclude(external_id__in=seen).delete()
+    # Only prune stale rows when we actually parsed class items — avoids wiping
+    # grades after a failed/empty sync (e.g. proxy error or login redirect).
+    if seen:
+        Grade.objects.filter(user=user, source="veracross").exclude(external_id__in=seen).delete()
     return count
 
 
@@ -199,7 +240,7 @@ def sync_veracross():
     if not user or not classes_url:
         return 0
     cookies = _load_cookies()
-    with httpx.Client(timeout=30, follow_redirects=True, cookies=cookies, headers={"User-Agent": UA}) as client:
+    with _httpx_client(cookies=cookies, headers={"User-Agent": UA}) as client:
         try:
             r = client.get(classes_url)
             need_login = (
